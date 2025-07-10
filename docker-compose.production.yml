@@ -1,0 +1,167 @@
+version: '3.8'
+
+services:
+  # Redis for caching and sessions
+  redis:
+    image: redis:7-alpine
+    container_name: linton-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - linton-network
+
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: linton-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-password123}
+      MONGO_INITDB_DATABASE: linton-portals
+    volumes:
+      - mongodb_data:/data/db
+      - ./scripts/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    ports:
+      - "27017:27017"
+    networks:
+      - linton-network
+
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: linton-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-staging}
+      PORT: 3000
+      MONGO_URI: mongodb://admin:${MONGO_PASSWORD:-password123}@mongodb:27017/linton-portals?authSource=admin
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      JWT_EXPIRES_IN: 7d
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
+      EMPLOYEE_URL: ${EMPLOYEE_URL:-http://localhost:5174}
+      ADMIN_URL: ${ADMIN_URL:-http://localhost:5175}
+      EMAIL_HOST: ${EMAIL_HOST:-smtp.gmail.com}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_SECURE: ${EMAIL_SECURE:-false}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      # AWS S3 Configuration
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+      # Monitoring
+      SENTRY_DSN: ${SENTRY_DSN}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./packages/backend/uploads:/app/uploads
+    networks:
+      - linton-network
+
+  # Client Portal
+  client-portal:
+    build:
+      context: .
+      dockerfile: Dockerfile.client-portal
+    container_name: linton-client-portal
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+      VITE_STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+      VITE_SENTRY_DSN: ${SENTRY_DSN}
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    networks:
+      - linton-network
+
+  # Employee Portal
+  employee-portal:
+    build:
+      context: .
+      dockerfile: Dockerfile.employee-portal
+    container_name: linton-employee-portal
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+      VITE_SENTRY_DSN: ${SENTRY_DSN}
+    ports:
+      - "5174:80"
+    depends_on:
+      - backend
+    networks:
+      - linton-network
+
+  # Admin Panel
+  admin-panel:
+    build:
+      context: .
+      dockerfile: Dockerfile.admin-panel
+    container_name: linton-admin-panel
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+      VITE_SENTRY_DSN: ${SENTRY_DSN}
+    ports:
+      - "5175:80"
+    depends_on:
+      - backend
+    networks:
+      - linton-network
+
+  # Nginx Reverse Proxy with SSL
+  nginx:
+    image: nginx:alpine
+    container_name: linton-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx-proxy.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    depends_on:
+      - backend
+      - client-portal
+      - employee-portal
+      - admin-panel
+    networks:
+      - linton-network
+
+  # Certbot for SSL certificates
+  certbot:
+    image: certbot/certbot
+    container_name: linton-certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    command: certonly --webroot -w /var/www/certbot --force-renewal --email ${SSL_EMAIL} -d ${DOMAIN} --agree-tos
+
+volumes:
+  mongodb_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  linton-network:
+    driver: bridge 

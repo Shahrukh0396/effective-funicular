@@ -1,0 +1,40 @@
+# Backend Dockerfile
+FROM node:18-alpine AS base
+
+# Install dependencies only when needed
+FROM base AS deps
+WORKDIR /app
+COPY packages/backend/package*.json ./
+RUN npm install --only=production && npm cache clean --force
+
+# Production image, copy all the files and run the app
+FROM base AS runner
+WORKDIR /app
+
+# Create a non-root user
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nodeuser
+
+# Copy dependencies
+COPY --from=deps /app/node_modules ./node_modules
+COPY packages/backend/package*.json ./
+
+# Copy source code
+COPY packages/backend/src ./src
+COPY packages/backend/scripts ./scripts
+
+# Create uploads directory
+RUN mkdir -p uploads && chown -R nodeuser:nodejs uploads
+
+# Switch to non-root user
+USER nodeuser
+
+# Expose port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+
+# Start the application
+CMD ["npm", "start"] 

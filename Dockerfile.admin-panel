@@ -1,0 +1,36 @@
+# Admin Panel Dockerfile
+FROM node:18-alpine AS base
+
+# Install dependencies only when needed
+FROM base AS deps
+WORKDIR /app
+COPY packages/admin-panel/package*.json ./
+RUN npm install --only=production && npm cache clean --force
+
+# Build the application
+FROM base AS builder
+WORKDIR /app
+COPY packages/admin-panel/package*.json ./
+RUN npm install
+COPY packages/admin-panel/ ./
+RUN npm run build
+
+# Production image, copy all the files and run the app
+FROM nginx:alpine AS runner
+WORKDIR /usr/share/nginx/html
+
+# Copy built files
+COPY --from=builder /app/dist .
+
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# Expose port
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:80/ || exit 1
+
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"] 

@@ -1,0 +1,21 @@
+{
+  "name": "linton-portals",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:client": "lerna run dev --scope=@linton/client-portal",
+    "dev:employee": "lerna run dev --scope=@linton/employee-portal",
+    "dev:admin": "lerna run dev --scope=@linton/admin-panel",
+    "dev:backend": "lerna run dev --scope=@linton/backend",
+    "dev": "concurrently \"npm run dev:client --host\" \"npm run dev:employee --host\" \"npm run dev:admin --host\"",
+    "build": "lerna run build",
+    "test": "lerna run test",
+    "lint": "lerna run lint"
+  },
+  "devDependencies": {
+    "lerna": "^8.0.0",
+    "concurrently": "^8.2.2"
+  }
+}
