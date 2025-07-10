@@ -1,0 +1,4 @@
+{
+  "alb_arn": "arn:aws:elasticloadbalancing:us-east-2:944871470938:loadbalancer/app/linton-staging-alb/b2fd8ec449df90f1",
+  "alb_dns": "linton-staging-alb-2029187797.us-east-2.elb.amazonaws.com"
+}

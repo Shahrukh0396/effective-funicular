@@ -1,0 +1,7 @@
+{
+  "vpc_id": "vpc-019c0ea7336dadeba",
+  "subnet_1": "subnet-0bae9ae29f2ad2c38",
+  "subnet_2": "subnet-0521af69fcaa6ef77",
+  "route_table_id": "rtb-0d85274f796062524",
+  "internet_gateway_id": "igw-017ec214e52561d78"
+}

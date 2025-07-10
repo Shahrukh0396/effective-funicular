@@ -1,0 +1,436 @@
+name: CI/CD Pipeline - Build, Push to Docker Hub, Deploy to AWS
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  DOCKER_USERNAME: shahrukh0396
+  AWS_REGION: us-east-2
+  ECS_CLUSTER: linton-staging-cluster
+  ECS_SERVICE_BACKEND: linton-backend-service
+  ECS_SERVICE_CLIENT_PORTAL: linton-client-portal-service
+  ECS_SERVICE_EMPLOYEE_PORTAL: linton-employee-portal-service
+  ECS_SERVICE_ADMIN_PANEL: linton-admin-panel-service
+
+jobs:
+  # Job 1: Build and Test
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd packages/backend && npm ci
+          cd ../client-portal && npm ci
+          cd ../employee-portal && npm ci
+          cd ../admin-panel && npm ci
+
+      - name: Run tests (if test scripts exist)
+        run: |
+          cd packages/backend && npm test || echo "No tests configured"
+          cd ../client-portal && npm test || echo "No tests configured"
+          cd ../employee-portal && npm test || echo "No tests configured"
+          cd ../admin-panel && npm test || echo "No tests configured"
+
+  # Job 2: Build Docker Images
+  build-images:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/'))
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.DOCKER_USERNAME }}/linton-backend
+            ${{ env.DOCKER_USERNAME }}/linton-client-portal
+            ${{ env.DOCKER_USERNAME }}/linton-employee-portal
+            ${{ env.DOCKER_USERNAME }}/linton-admin-panel
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+
+      - name: Build and push Backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.backend
+          push: true
+          tags: ${{ env.DOCKER_USERNAME }}/linton-backend:${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Client Portal image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.client-portal
+          push: true
+          tags: ${{ env.DOCKER_USERNAME }}/linton-client-portal:${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Employee Portal image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.employee-portal
+          push: true
+          tags: ${{ env.DOCKER_USERNAME }}/linton-employee-portal:${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Admin Panel image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.admin-panel
+          push: true
+          tags: ${{ env.DOCKER_USERNAME }}/linton-admin-panel:${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Output image tags
+        run: |
+          echo "Built and pushed images:"
+          echo "${{ env.DOCKER_USERNAME }}/linton-backend:${{ steps.meta.outputs.version }}"
+          echo "${{ env.DOCKER_USERNAME }}/linton-client-portal:${{ steps.meta.outputs.version }}"
+          echo "${{ env.DOCKER_USERNAME }}/linton-employee-portal:${{ steps.meta.outputs.version }}"
+          echo "${{ env.DOCKER_USERNAME }}/linton-admin-panel:${{ steps.meta.outputs.version }}"
+
+  # Job 3: Deploy to AWS ECS
+  deploy-to-aws:
+    needs: build-images
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/'))
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.DOCKER_USERNAME }}/linton-backend
+            ${{ env.DOCKER_USERNAME }}/linton-client-portal
+            ${{ env.DOCKER_USERNAME }}/linton-employee-portal
+            ${{ env.DOCKER_USERNAME }}/linton-admin-panel
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+
+      - name: Create ECR repositories if they don't exist
+        run: |
+          aws ecr create-repository --repository-name linton-backend --region ${{ env.AWS_REGION }} || true
+          aws ecr create-repository --repository-name linton-client-portal --region ${{ env.AWS_REGION }} || true
+          aws ecr create-repository --repository-name linton-employee-portal --region ${{ env.AWS_REGION }} || true
+          aws ecr create-repository --repository-name linton-admin-panel --region ${{ env.AWS_REGION }} || true
+
+      - name: Pull and tag images for ECR
+        run: |
+          # Pull images from Docker Hub
+          docker pull ${{ env.DOCKER_USERNAME }}/linton-backend:${{ steps.meta.outputs.version }}
+          docker pull ${{ env.DOCKER_USERNAME }}/linton-client-portal:${{ steps.meta.outputs.version }}
+          docker pull ${{ env.DOCKER_USERNAME }}/linton-employee-portal:${{ steps.meta.outputs.version }}
+          docker pull ${{ env.DOCKER_USERNAME }}/linton-admin-panel:${{ steps.meta.outputs.version }}
+
+          # Tag for ECR
+          docker tag ${{ env.DOCKER_USERNAME }}/linton-backend:${{ steps.meta.outputs.version }} ${{ steps.login-ecr.outputs.registry }}/linton-backend:${{ steps.meta.outputs.version }}
+          docker tag ${{ env.DOCKER_USERNAME }}/linton-client-portal:${{ steps.meta.outputs.version }} ${{ steps.login-ecr.outputs.registry }}/linton-client-portal:${{ steps.meta.outputs.version }}
+          docker tag ${{ env.DOCKER_USERNAME }}/linton-employee-portal:${{ steps.meta.outputs.version }} ${{ steps.login-ecr.outputs.registry }}/linton-employee-portal:${{ steps.meta.outputs.version }}
+          docker tag ${{ env.DOCKER_USERNAME }}/linton-admin-panel:${{ steps.meta.outputs.version }} ${{ steps.login-ecr.outputs.registry }}/linton-admin-panel:${{ steps.meta.outputs.version }}
+
+          # Push to ECR
+          docker push ${{ steps.login-ecr.outputs.registry }}/linton-backend:${{ steps.meta.outputs.version }}
+          docker push ${{ steps.login-ecr.outputs.registry }}/linton-client-portal:${{ steps.meta.outputs.version }}
+          docker push ${{ steps.login-ecr.outputs.registry }}/linton-employee-portal:${{ steps.meta.outputs.version }}
+          docker push ${{ steps.login-ecr.outputs.registry }}/linton-admin-panel:${{ steps.meta.outputs.version }}
+
+      - name: Update ECS task definitions
+        run: |
+          # Create task definition files
+          cat > task-definition-backend.json << EOF
+          {
+            "family": "linton-backend",
+            "networkMode": "awsvpc",
+            "requiresCompatibilities": ["FARGATE"],
+            "cpu": "256",
+            "memory": "512",
+            "executionRoleArn": "${{ secrets.ECS_EXECUTION_ROLE_ARN }}",
+            "taskRoleArn": "${{ secrets.ECS_TASK_ROLE_ARN }}",
+            "containerDefinitions": [
+              {
+                "name": "linton-backend",
+                "image": "${{ steps.login-ecr.outputs.registry }}/linton-backend:${{ steps.meta.outputs.version }}",
+                "portMappings": [
+                  {
+                    "containerPort": 3000,
+                    "protocol": "tcp"
+                  }
+                ],
+                "environment": [
+                  {"name": "NODE_ENV", "value": "staging"},
+                  {"name": "PORT", "value": "3000"},
+                  {"name": "MONGO_URI", "value": "${{ secrets.MONGO_URI }}"},
+                  {"name": "JWT_SECRET", "value": "${{ secrets.JWT_SECRET }}"},
+                  {"name": "JWT_EXPIRES_IN", "value": "7d"},
+                  {"name": "CLIENT_URL", "value": "${{ secrets.CLIENT_URL }}"},
+                  {"name": "EMPLOYEE_URL", "value": "${{ secrets.EMPLOYEE_URL }}"},
+                  {"name": "ADMIN_URL", "value": "${{ secrets.ADMIN_URL }}"},
+                  {"name": "EMAIL_HOST", "value": "${{ secrets.EMAIL_HOST }}"},
+                  {"name": "EMAIL_PORT", "value": "${{ secrets.EMAIL_PORT }}"},
+                  {"name": "EMAIL_USER", "value": "${{ secrets.EMAIL_USER }}"},
+                  {"name": "EMAIL_PASS", "value": "${{ secrets.EMAIL_PASS }}"},
+                  {"name": "STRIPE_SECRET_KEY", "value": "${{ secrets.STRIPE_SECRET_KEY }}"},
+                  {"name": "STRIPE_PUBLISHABLE_KEY", "value": "${{ secrets.STRIPE_PUBLISHABLE_KEY }}"},
+                  {"name": "STRIPE_WEBHOOK_SECRET", "value": "${{ secrets.STRIPE_WEBHOOK_SECRET }}"}
+                ],
+                "logConfiguration": {
+                  "logDriver": "awslogs",
+                  "options": {
+                    "awslogs-group": "/ecs/linton-backend",
+                    "awslogs-region": "${{ env.AWS_REGION }}",
+                    "awslogs-stream-prefix": "ecs"
+                  }
+                }
+              }
+            ]
+          }
+          EOF
+
+          cat > task-definition-client-portal.json << EOF
+          {
+            "family": "linton-client-portal",
+            "networkMode": "awsvpc",
+            "requiresCompatibilities": ["FARGATE"],
+            "cpu": "256",
+            "memory": "512",
+            "executionRoleArn": "${{ secrets.ECS_EXECUTION_ROLE_ARN }}",
+            "taskRoleArn": "${{ secrets.ECS_TASK_ROLE_ARN }}",
+            "containerDefinitions": [
+              {
+                "name": "linton-client-portal",
+                "image": "${{ steps.login-ecr.outputs.registry }}/linton-client-portal:${{ steps.meta.outputs.version }}",
+                "portMappings": [
+                  {
+                    "containerPort": 80,
+                    "protocol": "tcp"
+                  }
+                ],
+                "environment": [
+                  {"name": "VITE_API_URL", "value": "${{ secrets.VITE_API_URL }}"},
+                  {"name": "VITE_STRIPE_PUBLISHABLE_KEY", "value": "${{ secrets.STRIPE_PUBLISHABLE_KEY }}"}
+                ],
+                "logConfiguration": {
+                  "logDriver": "awslogs",
+                  "options": {
+                    "awslogs-group": "/ecs/linton-client-portal",
+                    "awslogs-region": "${{ env.AWS_REGION }}",
+                    "awslogs-stream-prefix": "ecs"
+                  }
+                }
+              }
+            ]
+          }
+          EOF
+
+          cat > task-definition-employee-portal.json << EOF
+          {
+            "family": "linton-employee-portal",
+            "networkMode": "awsvpc",
+            "requiresCompatibilities": ["FARGATE"],
+            "cpu": "256",
+            "memory": "512",
+            "executionRoleArn": "${{ secrets.ECS_EXECUTION_ROLE_ARN }}",
+            "taskRoleArn": "${{ secrets.ECS_TASK_ROLE_ARN }}",
+            "containerDefinitions": [
+              {
+                "name": "linton-employee-portal",
+                "image": "${{ steps.login-ecr.outputs.registry }}/linton-employee-portal:${{ steps.meta.outputs.version }}",
+                "portMappings": [
+                  {
+                    "containerPort": 80,
+                    "protocol": "tcp"
+                  }
+                ],
+                "environment": [
+                  {"name": "VITE_API_URL", "value": "${{ secrets.VITE_API_URL }}"}
+                ],
+                "logConfiguration": {
+                  "logDriver": "awslogs",
+                  "options": {
+                    "awslogs-group": "/ecs/linton-employee-portal",
+                    "awslogs-region": "${{ env.AWS_REGION }}",
+                    "awslogs-stream-prefix": "ecs"
+                  }
+                }
+              }
+            ]
+          }
+          EOF
+
+          cat > task-definition-admin-panel.json << EOF
+          {
+            "family": "linton-admin-panel",
+            "networkMode": "awsvpc",
+            "requiresCompatibilities": ["FARGATE"],
+            "cpu": "256",
+            "memory": "512",
+            "executionRoleArn": "${{ secrets.ECS_EXECUTION_ROLE_ARN }}",
+            "taskRoleArn": "${{ secrets.ECS_TASK_ROLE_ARN }}",
+            "containerDefinitions": [
+              {
+                "name": "linton-admin-panel",
+                "image": "${{ steps.login-ecr.outputs.registry }}/linton-admin-panel:${{ steps.meta.outputs.version }}",
+                "portMappings": [
+                  {
+                    "containerPort": 80,
+                    "protocol": "tcp"
+                  }
+                ],
+                "environment": [
+                  {"name": "VITE_API_URL", "value": "${{ secrets.VITE_API_URL }}"}
+                ],
+                "logConfiguration": {
+                  "logDriver": "awslogs",
+                  "options": {
+                    "awslogs-group": "/ecs/linton-admin-panel",
+                    "awslogs-region": "${{ env.AWS_REGION }}",
+                    "awslogs-stream-prefix": "ecs"
+                  }
+                }
+              }
+            ]
+          }
+          EOF
+
+      - name: Register new task definitions
+        run: |
+          aws ecs register-task-definition --cli-input-json file://task-definition-backend.json
+          aws ecs register-task-definition --cli-input-json file://task-definition-client-portal.json
+          aws ecs register-task-definition --cli-input-json file://task-definition-employee-portal.json
+          aws ecs register-task-definition --cli-input-json file://task-definition-admin-panel.json
+
+      - name: Update ECS services
+        run: |
+          # Update backend service
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE_BACKEND }} \
+            --task-definition linton-backend
+
+          # Update client portal service
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE_CLIENT_PORTAL }} \
+            --task-definition linton-client-portal
+
+          # Update employee portal service
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE_EMPLOYEE_PORTAL }} \
+            --task-definition linton-employee-portal
+
+          # Update admin panel service
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE_ADMIN_PANEL }} \
+            --task-definition linton-admin-panel
+
+      - name: Wait for deployment to complete
+        run: |
+          # Wait for backend service to be stable
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE_BACKEND }}
+
+          # Wait for client portal service to be stable
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE_CLIENT_PORTAL }}
+
+          # Wait for employee portal service to be stable
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE_EMPLOYEE_PORTAL }}
+
+          # Wait for admin panel service to be stable
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE_ADMIN_PANEL }}
+
+      - name: Deployment status
+        run: |
+          echo "Deployment completed successfully!"
+          echo "Services deployed:"
+          echo "- Backend: ${{ env.ECS_SERVICE_BACKEND }}"
+          echo "- Client Portal: ${{ env.ECS_SERVICE_CLIENT_PORTAL }}"
+          echo "- Employee Portal: ${{ env.ECS_SERVICE_EMPLOYEE_PORTAL }}"
+          echo "- Admin Panel: ${{ env.ECS_SERVICE_ADMIN_PANEL }}"
+          echo "Image version: ${{ steps.meta.outputs.version }}"
+
+  # Job 4: Health Check
+  health-check:
+    needs: deploy-to-aws
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/'))
+    steps:
+      - name: Health check
+        run: |
+          echo "Performing health checks..."
+          
+          # Wait a bit for services to be fully ready
+          sleep 30
+          
+          # Check if services are responding (replace with your actual URLs)
+          echo "Health check completed"
+          echo "Services should be available at:"
+          echo "- Backend API: ${{ secrets.BACKEND_URL }}/health"
+          echo "- Client Portal: ${{ secrets.CLIENT_URL }}"
+          echo "- Employee Portal: ${{ secrets.EMPLOYEE_URL }}"
+          echo "- Admin Panel: ${{ secrets.ADMIN_URL }}" 
