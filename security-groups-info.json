@@ -1,0 +1,157 @@
+{
+    "SecurityGroups": [
+        {
+            "GroupId": "sg-04fb29ef34553668c",
+            "IpPermissionsEgress": [
+                {
+                    "IpProtocol": "-1",
+                    "UserIdGroupPairs": [],
+                    "IpRanges": [
+                        {
+                            "CidrIp": "0.0.0.0/0"
+                        }
+                    ],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                }
+            ],
+            "VpcId": "vpc-019c0ea7336dadeba",
+            "SecurityGroupArn": "arn:aws:ec2:us-east-2:944871470938:security-group/sg-04fb29ef34553668c",
+            "OwnerId": "944871470938",
+            "GroupName": "linton-ecs-sg",
+            "Description": "Security group for ECS services",
+            "IpPermissions": [
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 80,
+                    "ToPort": 80,
+                    "UserIdGroupPairs": [
+                        {
+                            "UserId": "944871470938",
+                            "GroupId": "sg-01a995daa8e1955e5"
+                        }
+                    ],
+                    "IpRanges": [],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                },
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 3000,
+                    "ToPort": 3000,
+                    "UserIdGroupPairs": [
+                        {
+                            "UserId": "944871470938",
+                            "GroupId": "sg-01a995daa8e1955e5"
+                        }
+                    ],
+                    "IpRanges": [],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                }
+            ]
+        },
+        {
+            "GroupId": "sg-0220623b7fbf67e46",
+            "IpPermissionsEgress": [
+                {
+                    "IpProtocol": "-1",
+                    "UserIdGroupPairs": [],
+                    "IpRanges": [
+                        {
+                            "CidrIp": "0.0.0.0/0"
+                        }
+                    ],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                }
+            ],
+            "VpcId": "vpc-0d6874bc7f8121118",
+            "SecurityGroupArn": "arn:aws:ec2:us-east-2:944871470938:security-group/sg-0220623b7fbf67e46",
+            "OwnerId": "944871470938",
+            "GroupName": "linton-ecs-sg",
+            "Description": "Security group for ECS services",
+            "IpPermissions": [
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 80,
+                    "ToPort": 80,
+                    "UserIdGroupPairs": [
+                        {
+                            "UserId": "944871470938",
+                            "GroupId": "sg-0c30c4af8615efccf"
+                        }
+                    ],
+                    "IpRanges": [],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                },
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 3000,
+                    "ToPort": 3000,
+                    "UserIdGroupPairs": [
+                        {
+                            "UserId": "944871470938",
+                            "GroupId": "sg-0c30c4af8615efccf"
+                        }
+                    ],
+                    "IpRanges": [],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                }
+            ]
+        },
+        {
+            "GroupId": "sg-05933585f756b468d",
+            "IpPermissionsEgress": [
+                {
+                    "IpProtocol": "-1",
+                    "UserIdGroupPairs": [],
+                    "IpRanges": [
+                        {
+                            "CidrIp": "0.0.0.0/0"
+                        }
+                    ],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                }
+            ],
+            "VpcId": "vpc-0468bcf6f9db99773",
+            "SecurityGroupArn": "arn:aws:ec2:us-east-2:944871470938:security-group/sg-05933585f756b468d",
+            "OwnerId": "944871470938",
+            "GroupName": "linton-ecs-sg",
+            "Description": "Security group for ECS services",
+            "IpPermissions": [
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 80,
+                    "ToPort": 80,
+                    "UserIdGroupPairs": [
+                        {
+                            "UserId": "944871470938",
+                            "GroupId": "sg-06cdfa96b92e79a19"
+                        }
+                    ],
+                    "IpRanges": [],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                },
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 3000,
+                    "ToPort": 3000,
+                    "UserIdGroupPairs": [
+                        {
+                            "UserId": "944871470938",
+                            "GroupId": "sg-06cdfa96b92e79a19"
+                        }
+                    ],
+                    "IpRanges": [],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                }
+            ]
+        }
+    ]
+}

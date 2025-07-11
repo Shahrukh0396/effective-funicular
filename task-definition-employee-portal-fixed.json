@@ -1,0 +1,36 @@
+{
+  "family": "linton-employee-portal",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::944871470938:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::944871470938:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "linton-employee-portal",
+      "image": "944871470938.dkr.ecr.us-east-2.amazonaws.com/linton-employee-portal:latest",
+      "portMappings": [
+        {
+          "containerPort": 80,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "staging"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/linton-employee-portal",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "essential": true
+    }
+  ]
+}

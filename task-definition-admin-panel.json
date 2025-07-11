@@ -1,0 +1,37 @@
+{
+  "family": "linton-admin-panel",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::944871470938:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::944871470938:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "linton-admin-panel",
+      "image": "944871470938.dkr.ecr.us-east-2.amazonaws.com/linton-admin-panel:latest",
+      "portMappings": [
+        {
+          "containerPort": 80,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "VITE_API_URL",
+          "value": ""
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/linton-admin-panel",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

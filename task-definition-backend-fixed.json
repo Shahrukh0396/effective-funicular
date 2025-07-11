@@ -1,0 +1,99 @@
+{
+  "family": "linton-backend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::944871470938:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::944871470938:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "linton-backend",
+      "image": "944871470938.dkr.ecr.us-east-2.amazonaws.com/linton-backend:latest",
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "staging"
+        },
+        {
+          "name": "PORT",
+          "value": "3000"
+        },
+        {
+          "name": "MONGO_URI",
+          "value": "mongodb://localhost:27017/linton-portals"
+        },
+        {
+          "name": "JWT_SECRET",
+          "value": "your-super-secret-jwt-key-for-staging"
+        },
+        {
+          "name": "JWT_EXPIRES_IN",
+          "value": "7d"
+        },
+        {
+          "name": "CLIENT_URL",
+          "value": "http://localhost:3000"
+        },
+        {
+          "name": "EMPLOYEE_URL",
+          "value": "http://localhost:3001"
+        },
+        {
+          "name": "ADMIN_URL",
+          "value": "http://localhost:3002"
+        },
+        {
+          "name": "EMAIL_HOST",
+          "value": "smtp.gmail.com"
+        },
+        {
+          "name": "EMAIL_PORT",
+          "value": "587"
+        },
+        {
+          "name": "EMAIL_USER",
+          "value": "test@example.com"
+        },
+        {
+          "name": "EMAIL_PASS",
+          "value": "test-password"
+        },
+        {
+          "name": "STRIPE_SECRET_KEY",
+          "value": "sk_test_placeholder"
+        },
+        {
+          "name": "STRIPE_PUBLISHABLE_KEY",
+          "value": "pk_test_placeholder"
+        },
+        {
+          "name": "STRIPE_WEBHOOK_SECRET",
+          "value": "whsec_placeholder"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/linton-backend",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "essential": true,
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}
