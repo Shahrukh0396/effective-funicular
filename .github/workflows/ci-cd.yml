@@ -191,163 +191,28 @@ jobs:
           docker push ${{ steps.login-ecr.outputs.registry }}/linton-employee-portal:${{ steps.meta.outputs.version }}
           docker push ${{ steps.login-ecr.outputs.registry }}/linton-admin-panel:${{ steps.meta.outputs.version }}
 
-      - name: Update ECS task definitions
+      - name: Generate ECS task definitions
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_VERSION: ${{ steps.meta.outputs.version }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          ECS_EXECUTION_ROLE_ARN: ${{ secrets.ECS_EXECUTION_ROLE_ARN }}
+          ECS_TASK_ROLE_ARN: ${{ secrets.ECS_TASK_ROLE_ARN }}
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          CLIENT_URL: ${{ secrets.CLIENT_URL }}
+          EMPLOYEE_URL: ${{ secrets.EMPLOYEE_URL }}
+          ADMIN_URL: ${{ secrets.ADMIN_URL }}
+          EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
+          EMAIL_PORT: ${{ secrets.EMAIL_PORT }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: |
-          # Create task definition files
-          cat > task-definition-backend.json << EOF
-          {
-            "family": "linton-backend",
-            "networkMode": "awsvpc",
-            "requiresCompatibilities": ["FARGATE"],
-            "cpu": "256",
-            "memory": "512",
-            "executionRoleArn": "${{ secrets.ECS_EXECUTION_ROLE_ARN }}",
-            "taskRoleArn": "${{ secrets.ECS_TASK_ROLE_ARN }}",
-            "containerDefinitions": [
-              {
-                "name": "linton-backend",
-                "image": "${{ steps.login-ecr.outputs.registry }}/linton-backend:${{ steps.meta.outputs.version }}",
-                "portMappings": [
-                  {
-                    "containerPort": 3000,
-                    "protocol": "tcp"
-                  }
-                ],
-                "environment": [
-                  {"name": "NODE_ENV", "value": "staging"},
-                  {"name": "PORT", "value": "3000"},
-                  {"name": "MONGO_URI", "value": "${{ secrets.MONGO_URI }}"},
-                  {"name": "JWT_SECRET", "value": "${{ secrets.JWT_SECRET }}"},
-                  {"name": "JWT_EXPIRES_IN", "value": "7d"},
-                  {"name": "CLIENT_URL", "value": "${{ secrets.CLIENT_URL }}"},
-                  {"name": "EMPLOYEE_URL", "value": "${{ secrets.EMPLOYEE_URL }}"},
-                  {"name": "ADMIN_URL", "value": "${{ secrets.ADMIN_URL }}"},
-                  {"name": "EMAIL_HOST", "value": "${{ secrets.EMAIL_HOST }}"},
-                  {"name": "EMAIL_PORT", "value": "${{ secrets.EMAIL_PORT }}"},
-                  {"name": "EMAIL_USER", "value": "${{ secrets.EMAIL_USER }}"},
-                  {"name": "EMAIL_PASS", "value": "${{ secrets.EMAIL_PASS }}"},
-                  {"name": "STRIPE_SECRET_KEY", "value": "${{ secrets.STRIPE_SECRET_KEY }}"},
-                  {"name": "STRIPE_PUBLISHABLE_KEY", "value": "${{ secrets.STRIPE_PUBLISHABLE_KEY }}"},
-                  {"name": "STRIPE_WEBHOOK_SECRET", "value": "${{ secrets.STRIPE_WEBHOOK_SECRET }}"}
-                ],
-                "logConfiguration": {
-                  "logDriver": "awslogs",
-                  "options": {
-                    "awslogs-group": "/ecs/linton-backend",
-                    "awslogs-region": "${{ env.AWS_REGION }}",
-                    "awslogs-stream-prefix": "ecs"
-                  }
-                }
-              }
-            ]
-          }
-          EOF
-
-          cat > task-definition-client-portal.json << EOF
-          {
-            "family": "linton-client-portal",
-            "networkMode": "awsvpc",
-            "requiresCompatibilities": ["FARGATE"],
-            "cpu": "256",
-            "memory": "512",
-            "executionRoleArn": "${{ secrets.ECS_EXECUTION_ROLE_ARN }}",
-            "taskRoleArn": "${{ secrets.ECS_TASK_ROLE_ARN }}",
-            "containerDefinitions": [
-              {
-                "name": "linton-client-portal",
-                "image": "${{ steps.login-ecr.outputs.registry }}/linton-client-portal:${{ steps.meta.outputs.version }}",
-                "portMappings": [
-                  {
-                    "containerPort": 80,
-                    "protocol": "tcp"
-                  }
-                ],
-                "environment": [
-                  {"name": "VITE_API_URL", "value": "${{ secrets.VITE_API_URL }}"},
-                  {"name": "VITE_STRIPE_PUBLISHABLE_KEY", "value": "${{ secrets.STRIPE_PUBLISHABLE_KEY }}"}
-                ],
-                "logConfiguration": {
-                  "logDriver": "awslogs",
-                  "options": {
-                    "awslogs-group": "/ecs/linton-client-portal",
-                    "awslogs-region": "${{ env.AWS_REGION }}",
-                    "awslogs-stream-prefix": "ecs"
-                  }
-                }
-              }
-            ]
-          }
-          EOF
-
-          cat > task-definition-employee-portal.json << EOF
-          {
-            "family": "linton-employee-portal",
-            "networkMode": "awsvpc",
-            "requiresCompatibilities": ["FARGATE"],
-            "cpu": "256",
-            "memory": "512",
-            "executionRoleArn": "${{ secrets.ECS_EXECUTION_ROLE_ARN }}",
-            "taskRoleArn": "${{ secrets.ECS_TASK_ROLE_ARN }}",
-            "containerDefinitions": [
-              {
-                "name": "linton-employee-portal",
-                "image": "${{ steps.login-ecr.outputs.registry }}/linton-employee-portal:${{ steps.meta.outputs.version }}",
-                "portMappings": [
-                  {
-                    "containerPort": 80,
-                    "protocol": "tcp"
-                  }
-                ],
-                "environment": [
-                  {"name": "VITE_API_URL", "value": "${{ secrets.VITE_API_URL }}"}
-                ],
-                "logConfiguration": {
-                  "logDriver": "awslogs",
-                  "options": {
-                    "awslogs-group": "/ecs/linton-employee-portal",
-                    "awslogs-region": "${{ env.AWS_REGION }}",
-                    "awslogs-stream-prefix": "ecs"
-                  }
-                }
-              }
-            ]
-          }
-          EOF
-
-          cat > task-definition-admin-panel.json << EOF
-          {
-            "family": "linton-admin-panel",
-            "networkMode": "awsvpc",
-            "requiresCompatibilities": ["FARGATE"],
-            "cpu": "256",
-            "memory": "512",
-            "executionRoleArn": "${{ secrets.ECS_EXECUTION_ROLE_ARN }}",
-            "taskRoleArn": "${{ secrets.ECS_TASK_ROLE_ARN }}",
-            "containerDefinitions": [
-              {
-                "name": "linton-admin-panel",
-                "image": "${{ steps.login-ecr.outputs.registry }}/linton-admin-panel:${{ steps.meta.outputs.version }}",
-                "portMappings": [
-                  {
-                    "containerPort": 80,
-                    "protocol": "tcp"
-                  }
-                ],
-                "environment": [
-                  {"name": "VITE_API_URL", "value": "${{ secrets.VITE_API_URL }}"}
-                ],
-                "logConfiguration": {
-                  "logDriver": "awslogs",
-                  "options": {
-                    "awslogs-group": "/ecs/linton-admin-panel",
-                    "awslogs-region": "${{ env.AWS_REGION }}",
-                    "awslogs-stream-prefix": "ecs"
-                  }
-                }
-              }
-            ]
-          }
-          EOF
+          python3 scripts/generate-task-definitions.py
 
       - name: Register new task definitions
         run: |
