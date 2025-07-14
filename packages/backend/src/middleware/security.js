@@ -145,6 +145,9 @@ const corsOptions = {
       'http://localhost:5173', // Client portal
       'http://localhost:5174', // Employee portal
       'http://localhost:5175', // Admin panel
+      // Allow ALB domain
+      'http://linton-staging-alb-2029187797.us-east-2.elb.amazonaws.com',
+      'https://linton-staging-alb-2029187797.us-east-2.elb.amazonaws.com',
       // Allow local network access (192.168.x.x)
       /^http:\/\/192\.168\.\d+\.\d+:\d+$/, // 192.168.x.x with any port
       /^http:\/\/10\.\d+\.\d+\.\d+:\d+$/,  // 10.x.x.x with any port

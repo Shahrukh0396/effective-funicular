@@ -1,5 +1,0 @@
-{
-  "cluster_endpoint": "linton-staging-cluster.cluster-cpsuw8ueir25.us-east-2.docdb.amazonaws.com",
-  "master_username": "lintonadmin",
-  "master_password": "YourSecurePassword123"
-}
