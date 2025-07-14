@@ -1,8 +1,9 @@
 import axios from 'axios'
+import { config } from './index.js'
 
-// Create axios instance
+// Create axios instance with environment variable
 const instance = axios.create({
-  baseURL: 'http://localhost:3000',
+  baseURL: config.apiUrl, // Use environment variable instead of hardcoded localhost
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json'
@@ -39,4 +40,4 @@ instance.interceptors.response.use(
   }
 )
 
-export default instance 
+export default instance

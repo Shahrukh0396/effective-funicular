@@ -1,7 +1,8 @@
 import axios from 'axios'
+import { config } from './index.js'
 
-// Set base URL for API calls - using relative URL to work with Vite proxy
-axios.defaults.baseURL = ''
+// Set base URL for API calls - use environment variable
+axios.defaults.baseURL = config.apiUrl
 
 // Add request interceptor to include auth token
 axios.interceptors.request.use(
@@ -32,4 +33,4 @@ axios.interceptors.response.use(
   }
 )
 
-export default axios 
+export default axios
