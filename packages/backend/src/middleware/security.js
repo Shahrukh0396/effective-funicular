@@ -148,6 +148,11 @@ const corsOptions = {
       // Allow ALB domain
       'http://linton-staging-alb-2029187797.us-east-2.elb.amazonaws.com',
       'https://linton-staging-alb-2029187797.us-east-2.elb.amazonaws.com',
+      // Allow production domains
+      'https://app.linton-tech.com',
+      'https://admin.linton-tech.com',
+      'https://employee.linton-tech.com',
+      'https://api.linton-tech.com',
       // Allow local network access (192.168.x.x)
       /^http:\/\/192\.168\.\d+\.\d+:\d+$/, // 192.168.x.x with any port
       /^http:\/\/10\.\d+\.\d+\.\d+:\d+$/,  // 10.x.x.x with any port

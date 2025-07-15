@@ -50,7 +50,12 @@ const io = new Server(httpServer, {
     origin: [
       config.clientUrl,    // http://localhost:5173
       config.employeeUrl,  // http://localhost:5174
-      config.adminUrl      // http://localhost:5175
+      config.adminUrl,     // http://localhost:5175
+      // Production domains
+      'https://app.linton-tech.com',
+      'https://admin.linton-tech.com',
+      'https://employee.linton-tech.com',
+      'https://api.linton-tech.com'
     ],
     methods: ['GET', 'POST'],
     credentials: true
