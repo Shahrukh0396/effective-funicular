@@ -13,6 +13,17 @@ WORKDIR /app
 COPY packages/admin-panel/package*.json ./
 RUN npm install
 COPY packages/admin-panel/ ./
+
+# Accept build-time arguments for environment variables
+ARG VITE_API_URL
+ARG VITE_STRIPE_PUBLISHABLE_KEY
+ARG VITE_JIRA_CLIENT_ID
+
+# Set environment variables for build
+ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_STRIPE_PUBLISHABLE_KEY=$VITE_STRIPE_PUBLISHABLE_KEY
+ENV VITE_JIRA_CLIENT_ID=$VITE_JIRA_CLIENT_ID
+
 RUN npm run build
 
 # Production image, copy all the files and run the app

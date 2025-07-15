@@ -98,6 +98,10 @@ jobs:
           tags: ${{ env.DOCKER_USERNAME }}/linton-client-portal:${{ steps.meta.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            VITE_API_URL=${{ secrets.VITE_API_URL }}
+            VITE_STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+            VITE_JIRA_CLIENT_ID=${{ secrets.VITE_JIRA_CLIENT_ID }}
 
       - name: Build and push Employee Portal image
         uses: docker/build-push-action@v5
@@ -108,6 +112,10 @@ jobs:
           tags: ${{ env.DOCKER_USERNAME }}/linton-employee-portal:${{ steps.meta.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            VITE_API_URL=${{ secrets.VITE_API_URL }}
+            VITE_STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+            VITE_JIRA_CLIENT_ID=${{ secrets.VITE_JIRA_CLIENT_ID }}
 
       - name: Build and push Admin Panel image
         uses: docker/build-push-action@v5
@@ -118,6 +126,10 @@ jobs:
           tags: ${{ env.DOCKER_USERNAME }}/linton-admin-panel:${{ steps.meta.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            VITE_API_URL=${{ secrets.VITE_API_URL }}
+            VITE_STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+            VITE_JIRA_CLIENT_ID=${{ secrets.VITE_JIRA_CLIENT_ID }}
 
       - name: Output image tags
         run: |
