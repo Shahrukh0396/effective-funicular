@@ -43,7 +43,7 @@ export const projectService = {
 
   async fetchProjects(filters = {}) {
     try {
-      const response = await fetch(`/api/projects?${new URLSearchParams(filters)}`, {
+      const response = await fetch(`${config.apiUrl}/api/projects?${new URLSearchParams(filters)}`, {
         headers: authService.getAuthHeaders()
       })
       
@@ -66,7 +66,7 @@ export const projectService = {
 
   async getProjectById(projectId) {
     try {
-      const response = await fetch(`/api/projects/${projectId}`, {
+      const response = await fetch(`${config.apiUrl}/api/projects/${projectId}`, {
         headers: authService.getAuthHeaders()
       })
       

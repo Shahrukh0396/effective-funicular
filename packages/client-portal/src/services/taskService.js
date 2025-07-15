@@ -44,7 +44,7 @@ export const taskService = {
 
   async fetchTasks(filters = {}) {
     try {
-      const response = await fetch(`/api/tasks?${new URLSearchParams(filters)}`, {
+      const response = await fetch(`${config.apiUrl}/api/tasks?${new URLSearchParams(filters)}`, {
         headers: authService.getAuthHeaders()
       })
       

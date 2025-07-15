@@ -43,7 +43,7 @@ export const sprintService = {
 
   async fetchSprints(filters = {}) {
     try {
-      const response = await fetch(`/api/sprints?${new URLSearchParams(filters)}`, {
+      const response = await fetch(`${config.apiUrl}/api/sprints?${new URLSearchParams(filters)}`, {
         headers: authService.getAuthHeaders()
       })
       
@@ -66,7 +66,7 @@ export const sprintService = {
 
   async getSprintById(sprintId) {
     try {
-      const response = await fetch(`/api/sprints/${sprintId}`, {
+      const response = await fetch(`${config.apiUrl}/api/sprints/${sprintId}`, {
         headers: authService.getAuthHeaders()
       })
       
@@ -85,7 +85,7 @@ export const sprintService = {
 
   async createSprint(sprintData) {
     try {
-      const response = await fetch(`/api/sprints`, {
+      const response = await fetch(`${config.apiUrl}/api/sprints`, {
         method: 'POST',
         headers: authService.getAuthHeaders(),
         body: JSON.stringify(sprintData)
@@ -106,7 +106,7 @@ export const sprintService = {
 
   async updateSprint(sprintId, updates) {
     try {
-      const response = await fetch(`/api/sprints/${sprintId}`, {
+      const response = await fetch(`${config.apiUrl}/api/sprints/${sprintId}`, {
         method: 'PATCH',
         headers: authService.getAuthHeaders(),
         body: JSON.stringify(updates)
@@ -127,7 +127,7 @@ export const sprintService = {
 
   async deleteSprint(sprintId) {
     try {
-      const response = await fetch(`/api/sprints/${sprintId}`, {
+      const response = await fetch(`${config.apiUrl}/api/sprints/${sprintId}`, {
         method: 'DELETE',
         headers: authService.getAuthHeaders()
       })
@@ -147,7 +147,7 @@ export const sprintService = {
 
   async startSprint(sprintId) {
     try {
-      const response = await fetch(`/api/sprints/${sprintId}/start`, {
+      const response = await fetch(`${config.apiUrl}/api/sprints/${sprintId}/start`, {
         method: 'POST',
         headers: authService.getAuthHeaders()
       })
@@ -167,7 +167,7 @@ export const sprintService = {
 
   async completeSprint(sprintId) {
     try {
-      const response = await fetch(`/api/sprints/${sprintId}/complete`, {
+      const response = await fetch(`${config.apiUrl}/api/sprints/${sprintId}/complete`, {
         method: 'POST',
         headers: authService.getAuthHeaders()
       })
@@ -187,7 +187,7 @@ export const sprintService = {
 
   async getSprintMetrics(sprintId) {
     try {
-      const response = await fetch(`/api/sprints/${sprintId}/metrics`, {
+      const response = await fetch(`${config.apiUrl}/api/sprints/${sprintId}/metrics`, {
         headers: authService.getAuthHeaders()
       })
       

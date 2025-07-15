@@ -40,7 +40,7 @@ export const authService = {
 
   async register(userData) {
     try {
-      const response = await fetch('/api/auth/register', {
+      const response = await fetch(`${config.apiUrl}/api/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -68,8 +68,7 @@ export const authService = {
 
   async login(credentials) {
     try {
-      // Use relative URL to work with Vite proxy
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${config.apiUrl}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -98,7 +97,7 @@ export const authService = {
   async logout() {
     try {
       if (token.value) {
-        await fetch('/api/auth/logout', {
+        await fetch(`${config.apiUrl}/api/auth/logout`, {
           method: 'POST',
           headers: getAuthHeaders()
         })
@@ -113,7 +112,7 @@ export const authService = {
 
   async getMe() {
     try {
-      const response = await fetch('/api/auth/profile', {
+      const response = await fetch(`${config.apiUrl}/api/auth/profile`, {
         headers: getAuthHeaders()
       })
 
@@ -140,7 +139,7 @@ export const authService = {
 
   async updateProfile(updates) {
     try {
-      const response = await fetch('/api/auth/profile', {
+      const response = await fetch(`${config.apiUrl}/api/auth/profile`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify(updates)
@@ -165,7 +164,7 @@ export const authService = {
 
   async changePassword(passwords) {
     try {
-      const response = await fetch('/api/auth/change-password', {
+      const response = await fetch(`${config.apiUrl}/api/auth/change-password`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(passwords)
@@ -186,7 +185,7 @@ export const authService = {
 
   async forgotPassword(email) {
     try {
-      const response = await fetch('/api/auth/forgot-password', {
+      const response = await fetch(`${config.apiUrl}/api/auth/forgot-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -209,7 +208,7 @@ export const authService = {
 
   async resetPassword(token, newPassword) {
     try {
-      const response = await fetch('/api/auth/reset-password', {
+      const response = await fetch(`${config.apiUrl}/api/auth/reset-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -232,7 +231,7 @@ export const authService = {
 
   async verifyEmail(token) {
     try {
-      const response = await fetch(`/api/auth/verify-email/${token}`, {
+      const response = await fetch(`${config.apiUrl}/api/auth/verify-email/${token}`, {
         method: 'GET'
       })
 
@@ -252,7 +251,7 @@ export const authService = {
   // GDPR Compliance Methods
   async updateConsent(consentType, granted) {
     try {
-      const response = await fetch('/api/gdpr/consent', {
+      const response = await fetch(`${config.apiUrl}/api/gdpr/consent`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ consentType, granted })
@@ -273,7 +272,7 @@ export const authService = {
 
   async getConsentStatus() {
     try {
-      const response = await fetch('/api/gdpr/consent', {
+      const response = await fetch(`${config.apiUrl}/api/gdpr/consent`, {
         headers: getAuthHeaders()
       })
 
@@ -292,7 +291,7 @@ export const authService = {
 
   async requestDataPortability() {
     try {
-      const response = await fetch('/api/gdpr/data-portability', {
+      const response = await fetch(`${config.apiUrl}/api/gdpr/data-portability`, {
         method: 'POST',
         headers: getAuthHeaders()
       })
@@ -312,7 +311,7 @@ export const authService = {
 
   async requestRightToBeForgotten() {
     try {
-      const response = await fetch('/api/gdpr/forgotten', {
+      const response = await fetch(`${config.apiUrl}/api/gdpr/forgotten`, {
         method: 'POST',
         headers: getAuthHeaders()
       })

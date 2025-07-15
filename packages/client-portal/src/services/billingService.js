@@ -14,7 +14,7 @@ export const billingService = {
 
   async fetchBillingData() {
     try {
-      const response = await fetch(`/api/billing/overview`, {
+      const response = await fetch(`${config.apiUrl}/api/billing/overview`, {
         headers: authStore.getAuthHeaders()
       })
       
