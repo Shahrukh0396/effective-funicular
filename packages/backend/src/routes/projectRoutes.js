@@ -203,7 +203,7 @@ router.get('/',
 
 router.post('/',
   auth,
-  authorize(['admin', 'employee']),
+  authorize(['admin', 'super_admin', 'client']), // Admins, super admins, and clients can create projects
   [
     body('name').trim().isLength({ min: 3, max: 100 }),
     body('description').trim().isLength({ min: 10 }),

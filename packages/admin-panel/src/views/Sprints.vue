@@ -387,20 +387,20 @@ const newSprint = ref({
 
 // Computed properties
 const activeSprintsCount = computed(() => {
-  return sprints.value.filter(sprint => sprint.status === 'active').length
+  return (sprints.value || []).filter(sprint => sprint.status === 'active').length
 })
 
 const completedThisMonth = computed(() => {
   const now = new Date()
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-  return sprints.value.filter(sprint => 
+  return (sprints.value || []).filter(sprint => 
     sprint.status === 'completed' && 
     new Date(sprint.completedAt) >= startOfMonth
   ).length
 })
 
 const averageVelocity = computed(() => {
-  const completedSprints = sprints.value.filter(sprint => sprint.status === 'completed')
+  const completedSprints = (sprints.value || []).filter(sprint => sprint.status === 'completed')
   if (completedSprints.length === 0) return 0
   
   const totalVelocity = completedSprints.reduce((sum, sprint) => 
@@ -410,8 +410,8 @@ const averageVelocity = computed(() => {
 })
 
 const successRate = computed(() => {
-  const completedSprints = sprints.value.filter(sprint => sprint.status === 'completed')
-  const totalSprints = sprints.value.filter(sprint => 
+  const completedSprints = (sprints.value || []).filter(sprint => sprint.status === 'completed')
+  const totalSprints = (sprints.value || []).filter(sprint => 
     sprint.status === 'completed' || sprint.status === 'cancelled'
   )
   
@@ -430,9 +430,12 @@ const loadSprints = async () => {
     if (selectedStatus.value) filters.status = selectedStatus.value
     
     const response = await sprintService.fetchSprints(filters)
-    sprints.value = response.data || response
+    // Always set sprints.value to an array
+    sprints.value = Array.isArray(response.data) ? response.data : []
+    console.log('Loaded sprints:', sprints.value)
   } catch (err) {
     error.value = err.message || 'Failed to load sprints'
+    sprints.value = []
   } finally {
     loading.value = false
   }

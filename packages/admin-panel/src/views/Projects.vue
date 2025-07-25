@@ -290,7 +290,7 @@
                   </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {{ project.client }}
+                  {{ project.clientId?.company || project.clientId?.firstName + ' ' + project.clientId?.lastName || 'Unknown Client' }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
                   <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" :class="getStatusClass(project.status)">
@@ -300,19 +300,19 @@
                 <td class="px-6 py-4 whitespace-nowrap">
                   <div class="flex items-center">
                     <div class="w-16 bg-gray-200 rounded-full h-2 mr-2">
-                      <div class="bg-blue-600 h-2 rounded-full" :style="{ width: project.progress + '%' }"></div>
+                      <div class="bg-blue-600 h-2 rounded-full" :style="{ width: (project.progress || 0) + '%' }"></div>
                     </div>
-                    <span class="text-sm text-gray-900">{{ project.progress }}%</span>
+                    <span class="text-sm text-gray-900">{{ project.progress || 0 }}%</span>
                   </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {{ project.teamSize }} members
+                  {{ project.team?.length || 0 }} members
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  ${{ formatCurrency(project.budget) }}
+                  ${{ formatCurrency(project.budget?.estimated || project.budget || 0) }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {{ project.deadline }}
+                  {{ project.timeline?.endDate ? new Date(project.timeline.endDate).toLocaleDateString() : 'Not set' }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <div class="flex items-center space-x-2">

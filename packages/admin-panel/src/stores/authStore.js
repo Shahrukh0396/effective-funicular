@@ -27,9 +27,13 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       loading.value = true
       error.value = null
-      const response = await axios.post('/api/auth/login', { email, password })
+      const response = await axios.post('/api/auth/login', { 
+        email, 
+        password,
+        portalType: 'admin'
+      })
       const { data } = response.data
-      setToken(data.token)
+      setToken(data.accessToken)
       user.value = data.user
       return true
     } catch (err) {

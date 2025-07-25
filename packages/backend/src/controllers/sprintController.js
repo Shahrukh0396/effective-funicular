@@ -41,8 +41,11 @@ const getSprints = async (req, res) => {
       .populate('backlog.task', 'title status priority')
       .populate('team.user', 'firstName lastName email avatar')
       .sort({ createdAt: -1 })
-    
-    res.json(sprints)
+    console.log(sprints, "S")
+    res.json({
+      success: true,
+      data: sprints
+    })
   } catch (error) {
     res.status(500).json({ message: error.message })
   }

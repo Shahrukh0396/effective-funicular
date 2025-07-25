@@ -11,6 +11,7 @@ const swaggerUi = require('swagger-ui-express')
 const config = require('./config')
 const swaggerSpecs = require('./config/swagger')
 const swaggerFixMiddleware = require('./middleware/swaggerFix')
+const scheduler = require('./utils/scheduler')
 
 // Import security middleware
 const { 
@@ -26,7 +27,7 @@ const {
 const { detectVendor, filterByVendor, injectVendorBranding } = require('./middleware/multiTenant')
 
 // Import routes
-const authRoutes = require('./routes/authRoutes')
+const authRoutes = require('./routes/auth')
 const userRoutes = require('./routes/userRoutes')
 const projectRoutes = require('./routes/projectRoutes')
 const taskRoutes = require('./routes/taskRoutes')
@@ -39,6 +40,9 @@ const emailRoutes = require('./routes/emailRoutes')
 const vendorRoutes = require('./routes/vendorRoutes')
 const onboardingRoutes = require('./routes/onboardingRoutes')
 const chatRoutes = require('./routes/chatRoutes')
+const marketingRoutes = require('./routes/marketingRoutes')
+const analyticsRoutes = require('./routes/analyticsRoutes')
+const timeTrackingRoutes = require('./routes/timeTrackingRoutes')
 
 // Create Express app
 const app = express()
@@ -51,6 +55,8 @@ const io = new Server(httpServer, {
       config.clientUrl,    // http://localhost:5173
       config.employeeUrl,  // http://localhost:5174
       config.adminUrl,     // http://localhost:5175
+      config.marketingUrl, // http://localhost:5177
+      config.superAdminUrl, // http://localhost:5176
       // Production domains
       'https://app.linton-tech.com',
       'https://admin.linton-tech.com',
@@ -62,7 +68,8 @@ const io = new Server(httpServer, {
   }
 })
 
-// Export io instance
+// Export app and io for testing
+module.exports = app
 module.exports.io = io
 
 // Security middleware
@@ -147,6 +154,9 @@ app.use('/api/email', emailRoutes)
 app.use('/api/vendors', vendorRoutes)
 app.use('/api/onboarding', onboardingRoutes)
 app.use('/api/chat', chatRoutes)
+app.use('/api/marketing', marketingRoutes)
+app.use('/api/analytics', analyticsRoutes)
+app.use('/api/time-entries', timeTrackingRoutes)
 
 // 404 handler
 app.use(notFound)
@@ -154,24 +164,30 @@ app.use(notFound)
 // Error handling middleware
 app.use(errorHandler)
 
-// Connect to MongoDB
-mongoose.connect(config.mongoUri)
-  .then(() => {
-    console.log('✅ Connected to MongoDB')
-    // Start server on all network interfaces
-    httpServer.listen(config.port, '0.0.0.0', () => {
-      console.log(`🚀 Server is running on port ${config.port}`)
-      console.log(`📊 Environment: ${config.nodeEnv}`)
-      console.log(`🔗 Health check: http://localhost:${config.port}/health`)
-      console.log(`📚 API Documentation: http://localhost:${config.port}/api-docs`)
-      console.log(`🌐 Network access: http://0.0.0.0:${config.port}`)
-      console.log(`💡 Use your machine's IP address to access from other devices`)
+// Connect to MongoDB only if not in test mode
+if (process.env.NODE_ENV !== 'test') {
+  mongoose.connect(config.mongoUri)
+    .then(() => {
+      console.log('✅ Connected to MongoDB')
+      
+      // Initialize scheduled tasks
+      scheduler.init()
+      
+      // Start server
+      httpServer.listen(config.port, '0.0.0.0', () => {
+        console.log(`🚀 Server is running on port ${config.port}`)
+        console.log(`📊 Environment: ${config.nodeEnv}`)
+        console.log(`🔗 Health check: http://localhost:${config.port}/health`)
+        console.log(`📚 API Documentation: http://localhost:${config.port}/api-docs`)
+        console.log(`🌐 Network access: http://0.0.0.0:${config.port}`)
+        console.log(`💡 Use your machine's IP address to access from other devices`)
+      })
     })
-  })
-  .catch(err => {
-    console.error('❌ MongoDB connection error:', err)
-    process.exit(1)
-  })
+    .catch(err => {
+      console.error('❌ MongoDB connection error:', err)
+      process.exit(1)
+    })
+}
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
@@ -227,6 +243,7 @@ io.on('connection', (socket) => {
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('🛑 SIGTERM received, shutting down gracefully')
+  scheduler.stop()
   httpServer.close(() => {
     console.log('✅ Process terminated')
     process.exit(0)

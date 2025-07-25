@@ -630,7 +630,11 @@ router.put('/tasks/:id/update-status', async (req, res) => {
 router.get('/projects', async (req, res) => {
   try {
     const projects = await Project.find({
-      'team.user': req.user._id
+      $or: [
+        { 'team.user': req.user._id },
+        { projectManager: req.user._id },
+        { client: req.user._id }
+      ]
     })
       .populate('team.user', 'firstName lastName email avatar')
       .populate('client', 'firstName lastName email company')
@@ -640,6 +644,52 @@ router.get('/projects', async (req, res) => {
     res.json(projects)
   } catch (error) {
     console.error('Get projects error:', error)
+    res.status(500).json({ message: 'Internal server error' })
+  }
+})
+
+/**
+ * @swagger
+ * /api/employee/projects/:id:
+ *   get:
+ *     summary: Get employee's project by ID
+ *     description: Get a specific project the employee is involved in
+ *     tags: [Employee]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Project retrieved successfully
+ *       404:
+ *         description: Project not found
+ */
+router.get('/projects/:id', async (req, res) => {
+  try {
+    const project = await Project.findOne({
+      _id: req.params.id,
+      $or: [
+        { 'team.user': req.user._id },
+        { projectManager: req.user._id },
+        { client: req.user._id }
+      ]
+    })
+      .populate('team.user', 'firstName lastName email avatar')
+      .populate('client', 'firstName lastName email company')
+      .populate('projectManager', 'firstName lastName email')
+    
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' })
+    }
+    
+    res.json(project)
+  } catch (error) {
+    console.error('Get project error:', error)
     res.status(500).json({ message: 'Internal server error' })
   }
 })
@@ -733,6 +783,132 @@ router.put('/profile/update', async (req, res) => {
     })
   } catch (error) {
     console.error('Update profile error:', error)
+    res.status(500).json({ message: 'Internal server error' })
+  }
+})
+
+/**
+ * @swagger
+ * /api/employee/projects/:id/status:
+ *   patch:
+ *     summary: Update project status
+ *     description: Update the status of a project
+ *     tags: [Employee]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [planning, active, completed, on-hold]
+ *     responses:
+ *       200:
+ *         description: Project status updated successfully
+ *       404:
+ *         description: Project not found
+ */
+router.patch('/projects/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body
+    
+    const project = await Project.findOne({
+      _id: req.params.id,
+      $or: [
+        { 'team.user': req.user._id },
+        { projectManager: req.user._id },
+        { client: req.user._id }
+      ]
+    })
+    
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' })
+    }
+    
+    project.status = status
+    project.updatedAt = new Date()
+    await project.save()
+    
+    res.json({
+      success: true,
+      message: 'Project status updated successfully',
+      project
+    })
+  } catch (error) {
+    console.error('Update project status error:', error)
+    res.status(500).json({ message: 'Internal server error' })
+  }
+})
+
+/**
+ * @swagger
+ * /api/employee/projects/:id/health:
+ *   patch:
+ *     summary: Update project health
+ *     description: Update the health status of a project
+ *     tags: [Employee]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               health:
+ *                 type: string
+ *                 enum: [good, warning, critical]
+ *     responses:
+ *       200:
+ *         description: Project health updated successfully
+ *       404:
+ *         description: Project not found
+ */
+router.patch('/projects/:id/health', async (req, res) => {
+  try {
+    const { health } = req.body
+    
+    const project = await Project.findOne({
+      _id: req.params.id,
+      $or: [
+        { 'team.user': req.user._id },
+        { projectManager: req.user._id },
+        { client: req.user._id }
+      ]
+    })
+    
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' })
+    }
+    
+    project.health = health
+    project.updatedAt = new Date()
+    await project.save()
+    
+    res.json({
+      success: true,
+      message: 'Project health updated successfully',
+      project
+    })
+  } catch (error) {
+    console.error('Update project health error:', error)
     res.status(500).json({ message: 'Internal server error' })
   }
 })

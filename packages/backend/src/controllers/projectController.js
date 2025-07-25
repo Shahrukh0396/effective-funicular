@@ -1,6 +1,7 @@
 const Project = require('../models/Project')
 const Task = require('../models/Task')
 const User = require('../models/User')
+const Vendor = require('../models/Vendor')
 
 // Get all projects with role-based access control
 const getProjects = async (req, res) => {
@@ -13,21 +14,25 @@ const getProjects = async (req, res) => {
     
     // Add vendor filter for multi-tenancy
     if (req.vendorFilter) {
-      filter = { ...filter, ...req.vendorFilter }
+      // Fix: Use vendorId instead of vendor to match Project model
+      filter.vendorId = req.vendorFilter.vendor
+    } else if (req.user.vendorId) {
+      // Fallback: use user's vendorId if vendorFilter not set
+      filter.vendorId = req.user.vendorId
     }
     
     if (req.user.role === 'client') {
       // Clients can only see their own projects
-      filter.client = req.user._id
+      filter.clientId = req.user._id
     } else if (req.user.role === 'employee') {
       // Employees can see projects they're involved in
       filter.$or = [
-        { client: req.user._id },
+        { clientId: req.user._id },
         { 'team.user': req.user._id },
         { projectManager: req.user._id }
       ]
     }
-    // Admin can see all projects
+    // Admin and super_admin can see all projects (filtered by vendor)
 
     // Add status filter
     if (status) {
@@ -39,9 +44,9 @@ const getProjects = async (req, res) => {
     sort[sortBy] = sortOrder === 'desc' ? -1 : 1
 
     const projects = await Project.find(filter)
-      .populate('client', 'firstName lastName email company')
-      .populate('projectManager', 'firstName lastName email')
-      .populate('team.user', 'firstName lastName email avatar')
+      .populate('clientId', 'firstName lastName email company')
+      .populate('team.projectManager', 'firstName lastName email')
+      .populate('team.members.user', 'firstName lastName email avatar')
       .sort(sort)
       .skip(skip)
       .limit(parseInt(limit))
@@ -50,7 +55,9 @@ const getProjects = async (req, res) => {
 
     res.json({
       success: true,
-      data: projects,
+      data: {
+        projects: projects
+      },
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -71,10 +78,10 @@ const getProjects = async (req, res) => {
 const getProjectById = async (req, res) => {
   try {
     const project = await Project.findById(req.params.id)
-      .populate('client', 'firstName lastName email company')
-      .populate('projectManager', 'firstName lastName email avatar')
-      .populate('team.user', 'firstName lastName email avatar role')
-      .populate('attachments.uploadedBy', 'firstName lastName email')
+      .populate('clientId', 'firstName lastName email company')
+      .populate('team.projectManager', 'firstName lastName email avatar')
+      .populate('team.members.user', 'firstName lastName email avatar role')
+      .populate('documents.uploadedBy', 'firstName lastName email')
     
     if (!project) {
       return res.status(404).json({ 
@@ -85,9 +92,9 @@ const getProjectById = async (req, res) => {
 
     // Check access permissions
     const canAccess = req.user.role === 'admin' ||
-                     project.client._id.toString() === req.user._id.toString() ||
-                     project.team.some(member => member.user._id.toString() === req.user._id.toString()) ||
-                     project.projectManager?._id.toString() === req.user._id.toString()
+                     project.clientId._id.toString() === req.user._id.toString() ||
+                     project.team.members.some(member => member.user._id.toString() === req.user._id.toString()) ||
+                     project.team.projectManager?._id.toString() === req.user._id.toString()
 
     if (!canAccess) {
       return res.status(403).json({
@@ -148,18 +155,23 @@ const createProject = async (req, res) => {
       })
     }
 
-    // Only admins and employees can create projects
-    if (req.user.role === 'client') {
+    console.log('Create project - User role:', req.user.role)
+    console.log('Create project - User ID:', req.user._id)
+    console.log('Create project - User email:', req.user.email)
+    
+    // Only admins, employees, and clients can create projects
+    if (!['admin', 'employee', 'client', 'super_admin'].includes(req.user.role)) {
+      console.log('Create project - Access denied for role:', req.user.role)
       return res.status(403).json({
         success: false,
-        message: 'Access denied. Clients cannot create projects.'
+        message: 'Access denied. Only admins, employees, clients, and super admins can create projects.'
       })
     }
 
     const projectData = {
       name,
       description,
-      client,
+      clientId: client, // Fix: use clientId instead of client
       startDate,
       endDate,
       budget,
@@ -169,14 +181,22 @@ const createProject = async (req, res) => {
     }
 
     // Add vendor for multi-tenancy
-    if (req.vendorFilter) {
-      projectData.vendor = req.vendorFilter.vendor
+    if (req.user.vendorId) {
+      projectData.vendorId = req.user.vendorId // Fix: use vendorId instead of vendor
+    } else if (req.vendorFilter && req.vendorFilter.vendor) {
+      projectData.vendorId = req.vendorFilter.vendor // Fix: use vendorId instead of vendor
+    } else if (req.user.role === 'super_admin') {
+      // For super admin, try to find a vendor from the request context
+      const vendor = await Vendor.findOne({ domain: req.body.vendorDomain || 'test-vendor' })
+      if (vendor) {
+        projectData.vendorId = vendor._id // Fix: use vendorId instead of vendor
+      }
     }
 
     const project = new Project(projectData)
     
     const savedProject = await project.save()
-    await savedProject.populate('client', 'firstName lastName email company')
+    await savedProject.populate('clientId', 'firstName lastName email company') // Fix: use clientId
     await savedProject.populate('projectManager', 'firstName lastName email')
     await savedProject.populate('team.user', 'firstName lastName email')
     

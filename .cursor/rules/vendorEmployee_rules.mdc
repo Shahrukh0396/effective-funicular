@@ -1,0 +1,540 @@
+# Linton Client Portal - Employee Portal
+# .cursorrules file for Employee Portal implementation
+
+## Project Overview
+You are building the Employee Portal for the Linton Client Portal - a vendor-specific interface where employees manage tasks, track time, collaborate with team members, view project dashboards, and monitor their performance metrics. This portal is isolated per vendor for security and operational efficiency.
+
+## Technology Stack
+- Frontend: Vue.js 3 with Composition API, Pinia, Tailwind CSS
+- Backend: Node.js, Express.js, MongoDB with Mongoose
+- Real-time: Socket.io for live collaboration
+- Authentication: JWT with employee role verification
+- Time Tracking: Precise time logging with automatic detection
+- File Management: AWS S3 integration
+- Notifications: Real-time task and project updates
+
+## Core Features to Implement
+
+### 1. Employee Dashboard
+```vue
+<!-- EmployeeDashboard.vue -->
+- Personal task overview with priority indicators
+- Today's schedule and upcoming deadlines
+- Recent project activities and updates
+- Time tracking summary (daily/weekly)
+- Team activity feed
+- Performance metrics and goals
+- Quick actions for common tasks
+- Notification center with filters
+```
+
+### 2. Task Management System
+```vue
+<!-- TaskBoard.vue & TaskDetails.vue -->
+- Kanban board with drag-and-drop functionality
+- Task filtering by project, priority, status, assignee
+- Detailed task view with comments and attachments
+- Task creation and assignment
+- Subtask management and dependencies
+- Task time estimation and tracking
+- Progress reporting and status updates
+- Task templates for recurring work
+```
+
+### 3. Time Tracking Interface
+```vue
+<!-- TimeTracker.vue -->
+- Real-time timer with project/task association
+- Manual time entry with validation
+- Time tracking history and editing
+- Automatic idle time detection
+- Break time management
+- Daily and weekly timesheets
+- Billable vs non-billable hour tracking
+- Time approval workflow
+```
+
+### 4. Project Collaboration
+```vue
+<!-- ProjectWorkspace.vue -->
+- Project-specific workspaces
+- Team member visibility and communication
+- Shared project resources and documents
+- Project timeline and milestone tracking
+- Client communication visibility (where appropriate)
+- Project progress contribution tracking
+- Resource allocation and availability
+- Cross-project task visibility
+```
+
+### 5. Team Communication
+```vue
+<!-- TeamChat.vue -->
+- Real-time team messaging
+- Project-specific communication channels
+- Direct messaging with team members
+- File sharing and collaboration
+- Meeting scheduling and reminders
+- @mentions and notification system
+- Message search and archiving
+- Integration with project discussions
+```
+
+### 6. Performance Tracking
+```vue
+<!-- PerformanceMetrics.vue -->
+- Personal productivity analytics
+- Task completion rates and trends
+- Time utilization analysis
+- Quality metrics and feedback
+- Goal setting and progress tracking
+- Skill development tracking
+- Peer feedback and reviews
+- Achievement badges and recognition
+```
+
+### 7. Document & Resource Management
+```vue
+<!-- ResourceCenter.vue -->
+- Personal and shared document access
+- Version control for collaborative documents
+- Project resource libraries
+- Template and asset management
+- Knowledge base access
+- Training materials and guides
+- Code repositories and documentation
+- Client asset access (when authorized)
+```
+
+### 8. Settings & Preferences
+```vue
+<!-- EmployeeSettings.vue -->
+- Profile information and avatar
+- Notification preferences by category
+- Time tracking preferences and defaults
+- Calendar integration settings
+- Privacy and visibility controls
+- Work schedule and availability
+- Skills and expertise tags
+- Integration with external tools
+```
+
+## Database Schemas
+
+### EmployeeTasks Collection (Vendor-Specific)
+```javascript
+{
+  _id: ObjectId,
+  vendorId: ObjectId,
+  projectId: ObjectId,
+  assignedTo: ObjectId, // employee ID
+  createdBy: ObjectId,
+  title: String,
+  description: String,
+  type: String, // 'feature', 'bug', 'improvement', 'task', 'story', 'epic'
+  status: String, // 'todo', 'in_progress', 'review', 'testing', 'done', 'blocked'
+  priority: String, // 'low', 'medium', 'high', 'urgent'
+  estimatedHours: Number,
+  actualHours: Number,
+  remainingHours: Number,
+  dueDate: Date,
+  startedAt: Date,
+  completedAt: Date,
+  tags: [String],
+  dependencies: [{
+    taskId: ObjectId,
+    type: String // 'blocks', 'depends_on', 'related'
+  }],
+  parentTask: ObjectId,
+  subtasks: [ObjectId],
+  attachments: [{
+    name: String,
+    url: String,
+    uploadedBy: ObjectId,
+    uploadedAt: Date,
+    size: Number
+  }],
+  comments: [{
+    _id: ObjectId,
+    userId: ObjectId,
+    content: String,
+    createdAt: Date,
+    editedAt: Date,
+    attachments: [String]
+  }],
+  watchers: [ObjectId], // users following this task
+  clientVisible: Boolean, // whether client can see this task
+  billable: Boolean,
+  customFields: Object, // vendor-specific custom fields
+  worklog: [{
+    userId: ObjectId,
+    timeSpent: Number, // in minutes
+    description: String,
+    date: Date
+  }],
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+### EmployeeTimeEntries Collection (Vendor-Specific)
+```javascript
+{
+  _id: ObjectId,
+  vendorId: ObjectId,
+  employeeId: ObjectId,
+  projectId: ObjectId,
+  taskId: ObjectId, // optional
+  startTime: Date,
+  endTime: Date,
+  duration: Number, // in minutes
+  description: String,
+  category: String, // 'development', 'design', 'meeting', 'research', 'admin'
+  billable: Boolean,
+  hourlyRate: Number,
+  approved: Boolean,
+  approvedBy: ObjectId,
+  approvedAt: Date,
+  invoiced: Boolean,
+  invoiceId: ObjectId,
+  breakTime: Number, // minutes of break during this session
+  screenshots: [String], // optional screenshot URLs
+  productivity: {
+    keystrokes: Number,
+    mouseClicks: Number,
+    activeTime: Number, // minutes of active work
+    idleTime: Number // minutes of idle time
+  },
+  location: String, // 'office', 'home', 'client_site'
+  device: String, // device used for tracking
+  tags: [String],
+  notes: String,
+  editHistory: [{
+    editedBy: ObjectId,
+    editedAt: Date,
+    changes: Object,
+    reason: String
+  }],
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+### EmployeeGoals Collection (Vendor-Specific)
+```javascript
+{
+  _id: ObjectId,
+  vendorId: ObjectId,
+  employeeId: ObjectId,
+  managerId: ObjectId,
+  title: String,
+  description: String,
+  category: String, // 'performance', 'skill', 'project', 'career'
+  type: String, // 'quarterly', 'annual', 'ongoing'
+  targetValue: Number,
+  currentValue: Number,
+  unit: String, // 'hours', 'tasks', 'projects', 'percentage'
+  priority: String, // 'low', 'medium', 'high'
+  status: String, // 'active', 'completed', 'paused', 'cancelled'
+  startDate: Date,
+  targetDate: Date,
+  completedAt: Date,
+  milestones: [{
+    title: String,
+    targetValue: Number,
+    targetDate: Date,
+    completed: Boolean,
+    completedAt: Date
+  }],
+  progress: [{
+    date: Date,
+    value: Number,
+    notes: String,
+    recordedBy: ObjectId
+  }],
+  feedback: [{
+    from: ObjectId,
+    content: String,
+    date: Date,
+    type: String // 'manager', 'peer', 'self'
+  }],
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+### EmployeeNotifications Collection (Vendor-Specific)
+```javascript
+{
+  _id: ObjectId,
+  vendorId: ObjectId,
+  recipientId: ObjectId,
+  senderId: ObjectId, // optional
+  type: String, // 'task_assigned', 'mention', 'deadline', 'approval', 'message'
+  title: String,
+  content: String,
+  relatedId: ObjectId, // task, project, or message ID
+  relatedType: String, // 'task', 'project', 'message', 'timesheet'
+  priority: String, // 'low', 'medium', 'high', 'urgent'
+  channels: [String], // 'in_app', 'email', 'push'
+  read: Boolean,
+  readAt: Date,
+  actionRequired: Boolean,
+  actionUrl: String,
+  actionTaken: Boolean,
+  actionTakenAt: Date,
+  scheduled: Boolean,
+  scheduledFor: Date,
+  expiresAt: Date,
+  metadata: Object, // additional context data
+  createdAt: Date
+}
+```
+
+## API Endpoints
+
+### Task Management
+```javascript
+// GET /api/employee/tasks - Get assigned tasks with filtering
+// POST /api/employee/tasks - Create new task
+// GET /api/employee/tasks/:id - Get specific task details
+// PUT /api/employee/tasks/:id - Update task
+// DELETE /api/employee/tasks/:id - Delete task
+// POST /api/employee/tasks/:id/comments - Add comment to task
+// PUT /api/employee/tasks/:id/status - Update task status
+// POST /api/employee/tasks/:id/time - Log time to task
+// POST /api/employee/tasks/:id/watch - Watch/unwatch task
+```
+
+### Time Tracking
+```javascript
+// GET /api/employee/time-entries - Get time entries with filtering
+// POST /api/employee/time-entries - Create time entry
+// PUT /api/employee/time-entries/:id - Update time entry
+// DELETE /api/employee/time-entries/:id - Delete time entry
+// POST /api/employee/time-entries/start - Start time tracking
+// POST /api/employee/time-entries/stop - Stop time tracking
+// GET /api/employee/time-entries/active - Get currently running timer
+// GET /api/employee/time-entries/summary - Get time summary
+```
+
+### Projects & Collaboration
+```javascript
+// GET /api/employee/projects - Get assigned projects
+// GET /api/employee/projects/:id - Get project details
+// GET /api/employee/projects/:id/tasks - Get project tasks
+// GET /api/employee/projects/:id/team - Get project team members
+// POST /api/employee/projects/:id/updates - Post project update
+// GET /api/employee/projects/:id/timeline - Get project timeline
+```
+
+### Communication
+```javascript
+// GET /api/employee/messages - Get messages and conversations
+// POST /api/employee/messages - Send message
+// PUT /api/employee/messages/:id/read - Mark message as read
+// GET /api/employee/messages/channels - Get available channels
+// POST /api/employee/messages/channels - Create new channel
+// GET /api/employee/notifications - Get notifications
+// PUT /api/employee/notifications/:id/read - Mark notification as read
+```
+
+### Performance & Goals
+```javascript
+// GET /api/employee/goals - Get personal goals
+// POST /api/employee/goals - Create new goal
+// PUT /api/employee/goals/:id - Update goal
+// POST /api/employee/goals/:id/progress - Log goal progress
+// GET /api/employee/performance - Get performance metrics
+// GET /api/employee/analytics - Get personal analytics
+```
+
+## Frontend Components Structure
+
+```
+src/
+├── pages/
+│   ├── EmployeeDashboard.vue
+│   ├── TaskBoard.vue
+│   ├── TaskDetails.vue
+│   ├── TimeTracker.vue
+│   ├── ProjectWorkspace.vue
+│   ├── TeamChat.vue
+│   ├── PerformanceMetrics.vue
+│   ├── ResourceCenter.vue
+│   ├── Calendar.vue
+│   └── EmployeeSettings.vue
+├── components/
+│   ├── dashboard/
+│   │   ├── TaskSummaryCard.vue
+│   │   ├── TimeTrackingWidget.vue
+│   │   ├── ProjectStatusCards.vue
+│   │   ├── ActivityFeed.vue
+│   │   ├── UpcomingDeadlines.vue
+│   │   └── QuickActions.vue
+│   ├── tasks/
+│   │   ├── KanbanBoard.vue
+│   │   ├── KanbanColumn.vue
+│   │   ├── TaskCard.vue
+│   │   ├── TaskModal.vue
+│   │   ├── TaskForm.vue
+│   │   ├── TaskComments.vue
+│   │   ├── TaskTimer.vue
+│   │   ├── SubtaskList.vue
+│   │   └── TaskFilters.vue
+│   ├── time/
+│   │   ├── ActiveTimer.vue
+│   │   ├── TimeEntryForm.vue
+│   │   ├── TimesheetView.vue
+│   │   ├── TimeAnalytics.vue
+│   │   ├── IdleTimeDetector.vue
+│   │   └── TimerControls.vue
+│   ├── projects/
+│   │   ├── ProjectCard.vue
+│   │   ├── ProjectProgress.vue
+│   │   ├── ProjectTeam.vue
+│   │   ├── ProjectTimeline.vue
+│   │   ├── ProjectResources.vue
+│   │   └── MilestoneTracker.vue
+│   ├── communication/
+│   │   ├── ChatWindow.vue
+│   │   ├── MessageInput.vue
+│   │   ├── MessageBubble.vue
+│   │   ├── ChannelList.vue
+│   │   ├── UserList.vue
+│   │   ├── FileSharing.vue
+│   │   └── MentionPicker.vue
+│   ├── performance/
+│   │   ├── GoalCard.vue
+│   │   ├── ProgressChart.vue
+│   │   ├── MetricsWidget.vue
+│   │   ├── FeedbackForm.vue
+│   │   ├── AchievementBadge.vue
+│   │   └── SkillsMatrix.vue
+│   ├── common/
+│   │   ├── DateRangePicker.vue
+│   │   ├── FileUpload.vue
+│   │   ├── UserAvatar.vue
+│   │   ├── StatusIndicator.vue
+│   │   ├── PriorityBadge.vue
+│   │   ├── SearchBox.vue
+│   │   └── Pagination.vue
+│   └── layout/
+│       ├── EmployeeHeader.vue
+│       ├── EmployeeSidebar.vue
+│       ├── NotificationDropdown.vue
+│       ├── UserMenu.vue
+│       └── Breadcrumbs.vue
+```
+
+## Key Implementation Guidelines
+
+### 1. Real-time Collaboration
+```javascript
+// Implement real-time updates for:
+- Task status changes and assignments
+- Team member activity and presence
+- Live commenting and mentions
+- Timer status across team
+- Project updates and milestones
+- File uploads and sharing
+- Meeting invitations and updates
+```
+
+### 2. Time Tracking Features
+```javascript
+// Advanced time tracking capabilities:
+- Automatic idle time detection
+- Screenshot capture (optional/configurable)
+- Application usage tracking
+- Break time management
+- Productivity scoring
+- Time approval workflows
+- Billable hour categorization
+```
+
+### 3. Task Management
+```javascript
+// Comprehensive task features:
+- Drag-and-drop Kanban interface
+- Task dependencies and blocking
+- Recurring task templates
+- Batch task operations
+- Custom task fields per vendor
+- Advanced filtering and search
+- Task time estimation vs actual
+```
+
+### 4. Performance Analytics
+```javascript
+// Personal productivity insights:
+- Time utilization analysis
+- Task completion trends
+- Project contribution metrics
+- Goal progress tracking
+- Skill development indicators
+- Peer comparison (anonymous)
+- Improvement recommendations
+```
+
+### 5. Mobile-First Design
+```javascript
+// Mobile optimization for:
+- Quick task status updates
+- Time tracking on-the-go
+- Push notifications
+- Offline capability for basic features
+- Touch-friendly interfaces
+- Voice-to-text for comments
+- Camera integration for attachments
+```
+
+### 6. Integration Capabilities
+```javascript
+// External tool integrations:
+- Calendar applications (Google, Outlook)
+- Version control systems (Git)
+- Communication tools (Slack, Teams)
+- Development environments (VS Code)
+- Design tools (Figma, Adobe)
+- File storage (Google Drive, Dropbox)
+```
+
+## Security Considerations
+- Employee data isolation per vendor
+- Task visibility controls
+- Time tracking data privacy
+- Secure file upload and access
+- Role-based feature access
+- Activity logging and audit trails
+- Session management and timeout
+- Multi-factor authentication support
+
+## Performance Optimization
+- Real-time update throttling
+- Efficient task board rendering
+- Lazy loading for large task lists
+- Optimized time tracking calculations
+- Background sync for offline data
+- Compressed image uploads
+- Client-side caching strategies
+
+## User Experience Guidelines
+- Intuitive drag-and-drop interactions
+- Keyboard shortcuts for power users
+- Contextual help and tooltips
+- Smooth animations and transitions
+- Consistent iconography and styling
+- Progressive disclosure of complex features
+- Personalization and customization options
+
+## Accessibility Features
+- Screen reader compatibility
+- Keyboard navigation support
+- High contrast themes
+- Text scaling options
+- Alternative input methods
+- Focus management for modals
+- Descriptive error messages
+
+Remember: This portal is where employees spend most of their work time. Focus on efficiency, reducing friction in common workflows, and providing clear visibility into their contributions and progress. Every feature should support productivity while maintaining work-life balance through smart time management.

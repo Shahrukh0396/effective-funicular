@@ -29,7 +29,7 @@ export const projectService = {
   async fetchProjects(filters = {}) {
     const authStore = useAuthStore()
     try {
-      const response = await fetch(`/api/projects?${new URLSearchParams(filters)}`, {
+      const response = await fetch(`${config.apiUrl}/api/projects?${new URLSearchParams(filters)}`, {
         headers: authStore.getAuthHeaders()
       })
       
@@ -53,7 +53,7 @@ export const projectService = {
   async getProjectById(projectId) {
     const authStore = useAuthStore()
     try {
-      const response = await fetch(`/api/projects/${projectId}`, {
+      const response = await fetch(`${config.apiUrl}/api/projects/${projectId}`, {
         headers: authStore.getAuthHeaders()
       })
       

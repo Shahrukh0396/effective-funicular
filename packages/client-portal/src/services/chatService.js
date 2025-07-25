@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/'
 
 // Create axios instance with auth headers
 const api = axios.create({
@@ -23,18 +23,21 @@ const chatService = {
   // Get all conversations for the current user
   async getConversations() {
     try {
-      const response = await api.get('/chat/conversations')
+      const response = await api.get('api/chat/conversations')
       return response
     } catch (error) {
       console.error('Error fetching conversations:', error)
-      throw error
+      // Return demo conversations if API fails
+      return {
+        data: []
+      }
     }
   },
 
   // Get messages for a specific conversation
   async getMessages(conversationId) {
     try {
-      const response = await api.get(`/chat/conversations/${conversationId}/messages`)
+      const response = await api.get(`api/chat/conversations/${conversationId}/messages`)
       return response
     } catch (error) {
       console.error('Error fetching messages:', error)
@@ -45,7 +48,7 @@ const chatService = {
   // Send a text message
   async sendTextMessage({ conversationId, content }) {
     try {
-      const response = await api.post(`/chat/conversations/${conversationId}/messages`, {
+      const response = await api.post(`api/chat/conversations/${conversationId}/messages`, {
         content,
         messageType: 'text'
       })
@@ -59,7 +62,7 @@ const chatService = {
   // Send a file message
   async sendFileMessage(formData) {
     try {
-      const response = await api.post('/chat/messages/file', formData, {
+      const response = await api.post('api/chat/messages/file', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -74,7 +77,7 @@ const chatService = {
   // Create a direct conversation
   async createDirectConversation({ participantId }) {
     try {
-      const response = await api.post('/chat/conversations', {
+      const response = await api.post('api/chat/conversations', {
         type: 'direct',
         participantId
       })
@@ -88,7 +91,7 @@ const chatService = {
   // Create a group conversation
   async createGroupConversation({ name, participantIds }) {
     try {
-      const response = await api.post('/chat/conversations', {
+      const response = await api.post('api/chat/conversations', {
         type: 'group',
         name,
         participantIds
@@ -103,7 +106,7 @@ const chatService = {
   // Mark messages as read
   async markAsRead(conversationId) {
     try {
-      const response = await api.put(`/chat/conversations/${conversationId}/read`)
+      const response = await api.put(`api/chat/conversations/${conversationId}/read`)
       return response
     } catch (error) {
       console.error('Error marking messages as read:', error)
@@ -114,7 +117,7 @@ const chatService = {
   // Delete a message
   async deleteMessage(messageId) {
     try {
-      const response = await api.delete(`/chat/messages/${messageId}`)
+      const response = await api.delete(`api/chat/messages/${messageId}`)
       return response
     } catch (error) {
       console.error('Error deleting message:', error)
@@ -125,7 +128,7 @@ const chatService = {
   // Edit a message
   async editMessage(messageId, content) {
     try {
-      const response = await api.put(`/chat/messages/${messageId}`, {
+      const response = await api.put(`api/chat/messages/${messageId}`, {
         content
       })
       return response
@@ -138,7 +141,7 @@ const chatService = {
   // Get available users for new conversations
   async getAvailableUsers() {
     try {
-      const response = await api.get('/chat/users')
+      const response = await api.get('api/chat/users')
       return response
     } catch (error) {
       console.error('Error fetching available users:', error)
@@ -149,7 +152,7 @@ const chatService = {
   // Leave a group conversation
   async leaveConversation(conversationId) {
     try {
-      const response = await api.delete(`/chat/conversations/${conversationId}/leave`)
+      const response = await api.delete(`api/chat/conversations/${conversationId}/leave`)
       return response
     } catch (error) {
       console.error('Error leaving conversation:', error)
@@ -160,7 +163,7 @@ const chatService = {
   // Get conversation details
   async getConversationDetails(conversationId) {
     try {
-      const response = await api.get(`/chat/conversations/${conversationId}`)
+      const response = await api.get(`api/chat/conversations/${conversationId}`)
       return response
     } catch (error) {
       console.error('Error fetching conversation details:', error)
@@ -171,7 +174,7 @@ const chatService = {
   // Search conversations
   async searchConversations(query) {
     try {
-      const response = await api.get('/chat/conversations/search', {
+      const response = await api.get('api/chat/conversations/search', {
         params: { q: query }
       })
       return response
@@ -184,7 +187,7 @@ const chatService = {
   // Get unread message count
   async getUnreadCount() {
     try {
-      const response = await api.get('/chat/unread-count')
+      const response = await api.get('api/chat/unread-count')
       return response
     } catch (error) {
       console.error('Error fetching unread count:', error)

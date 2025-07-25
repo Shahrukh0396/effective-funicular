@@ -52,7 +52,7 @@ const vendorAuth = async (req, res, next) => {
     // Add vendor info to request
     req.vendorId = vendor._id
     req.vendor = vendor
-    req.vendorSlug = vendor.slug
+    req.vendorSlug = vendor.domain
 
     next()
   } catch (error) {
@@ -104,7 +104,7 @@ const optionalVendorAuth = async (req, res, next) => {
 
     req.vendorId = vendor._id
     req.vendor = vendor
-    req.vendorSlug = vendor.slug
+    req.vendorSlug = vendor.domain
 
     next()
   } catch (error) {

@@ -295,271 +295,236 @@
   </div>
 </template>
 
-<script>
+<script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useAuthStore } from '../stores/authStore'
 import chatService from '../services/chatService'
 
-export default {
-  name: 'ChatInterface',
-  setup() {
-    const authStore = useAuthStore()
-    
-    // Reactive data
-    const conversations = ref([])
-    const selectedConversation = ref(null)
-    const messages = ref([])
-    const newMessage = ref('')
-    const loading = ref(false)
-    const sidebarCollapsed = ref(false)
-    const showNewConversationModal = ref(false)
-    const showFileUpload = ref(false)
-    const selectedFiles = ref([])
-    const availableUsers = ref([])
-    
-    // Form data for new conversation
-    const newConversation = ref({
-      type: 'direct',
-      name: '',
-      participantId: '',
-      participantIds: []
+const authStore = useAuthStore()
+
+// Reactive data
+const conversations = ref([])
+const selectedConversation = ref(null)
+const messages = ref([])
+const newMessage = ref('')
+const loading = ref(false)
+const sidebarCollapsed = ref(false)
+const showNewConversationModal = ref(false)
+const showFileUpload = ref(false)
+const selectedFiles = ref([])
+const availableUsers = ref([])
+
+// Form data for new conversation
+const newConversation = ref({
+  type: 'direct',
+  name: '',
+  participantId: '',
+  participantIds: []
+})
+
+// Socket connection
+let socket = null
+
+// Computed
+const currentUser = authStore.user
+
+// Methods
+const loadConversations = async () => {
+  try {
+    const response = await chatService.getConversations()
+    conversations.value = response.data
+  } catch (error) {
+    console.error('Failed to load conversations:', error)
+  }
+}
+
+const loadAvailableUsers = async () => {
+  try {
+    const response = await chatService.getAvailableUsers()
+    availableUsers.value = response.data
+  } catch (error) {
+    console.error('Failed to load available users:', error)
+  }
+}
+
+const loadMessages = async (conversationId) => {
+  if (!conversationId) return
+  
+  loading.value = true
+  try {
+    const response = await chatService.getMessages(conversationId)
+    messages.value = response.data
+    scrollToBottom()
+  } catch (error) {
+    console.error('Failed to load messages:', error)
+  } finally {
+    loading.value = false
+  }
+}
+
+const selectConversation = (conversation) => {
+  selectedConversation.value = conversation
+  loadMessages(conversation._id)
+  joinConversation(conversation._id)
+}
+
+const sendMessage = async () => {
+  if (!newMessage.value.trim() || !selectedConversation.value) return
+  
+  try {
+    await chatService.sendTextMessage({
+      conversationId: selectedConversation.value._id,
+      content: newMessage.value
     })
-    
-    // Socket connection
-    let socket = null
-    
-    // Computed
-    const currentUser = authStore.user
-    
-    // Methods
-    const loadConversations = async () => {
-      try {
-        const response = await chatService.getConversations()
-        conversations.value = response.data
-      } catch (error) {
-        console.error('Failed to load conversations:', error)
-      }
-    }
-    
-    const loadAvailableUsers = async () => {
-      try {
-        const response = await chatService.getAvailableUsers()
-        availableUsers.value = response.data
-      } catch (error) {
-        console.error('Failed to load available users:', error)
-      }
-    }
-    
-    const loadMessages = async (conversationId) => {
-      if (!conversationId) return
-      
-      loading.value = true
-      try {
-        const response = await chatService.getMessages(conversationId)
-        messages.value = response.data
-        scrollToBottom()
-      } catch (error) {
-        console.error('Failed to load messages:', error)
-      } finally {
-        loading.value = false
-      }
-    }
-    
-    const selectConversation = (conversation) => {
-      selectedConversation.value = conversation
-      loadMessages(conversation._id)
-      joinConversation(conversation._id)
-    }
-    
-    const sendMessage = async () => {
-      if (!newMessage.value.trim() || !selectedConversation.value) return
-      
-      try {
-        await chatService.sendTextMessage({
-          conversationId: selectedConversation.value._id,
-          content: newMessage.value
-        })
-        newMessage.value = ''
-      } catch (error) {
-        console.error('Failed to send message:', error)
-      }
-    }
-    
-    const createConversation = async () => {
-      try {
-        if (newConversation.value.type === 'direct') {
-          await chatService.createDirectConversation({
-            participantId: newConversation.value.participantId
-          })
-        } else {
-          await chatService.createGroupConversation({
-            name: newConversation.value.name,
-            participantIds: newConversation.value.participantIds
-          })
-        }
-        
-        showNewConversationModal.value = false
-        loadConversations()
-        resetNewConversation()
-      } catch (error) {
-        console.error('Failed to create conversation:', error)
-      }
-    }
-    
-    const handleFileUpload = (event) => {
-      const files = Array.from(event.target.files)
-      selectedFiles.value = files
-    }
-    
-    const removeFile = (file) => {
-      const index = selectedFiles.value.indexOf(file)
-      if (index > -1) {
-        selectedFiles.value.splice(index, 1)
-      }
-    }
-    
-    const uploadFiles = async () => {
-      if (!selectedConversation.value || selectedFiles.value.length === 0) return
-      
-      try {
-        const formData = new FormData()
-        formData.append('conversationId', selectedConversation.value._id)
-        selectedFiles.value.forEach(file => {
-          formData.append('files', file)
-        })
-        
-        await chatService.sendFileMessage(formData)
-        showFileUpload.value = false
-        selectedFiles.value = []
-      } catch (error) {
-        console.error('Failed to upload files:', error)
-      }
-    }
-    
-    const joinConversation = (conversationId) => {
-      if (socket) {
-        socket.emit('joinConversation', conversationId)
-      }
-    }
-    
-    const scrollToBottom = () => {
-      nextTick(() => {
-        const container = document.querySelector('.messages-container')
-        if (container) {
-          container.scrollTop = container.scrollHeight
-        }
+    newMessage.value = ''
+  } catch (error) {
+    console.error('Failed to send message:', error)
+  }
+}
+
+const createConversation = async () => {
+  try {
+    if (newConversation.value.type === 'direct') {
+      await chatService.createDirectConversation({
+        participantId: newConversation.value.participantId
+      })
+    } else {
+      await chatService.createGroupConversation({
+        name: newConversation.value.name,
+        participantIds: newConversation.value.participantIds
       })
     }
     
-    const resetNewConversation = () => {
-      newConversation.value = {
-        type: 'direct',
-        name: '',
-        participantId: '',
-        participantIds: []
-      }
-    }
-    
-    // Utility methods
-    const getConversationInitials = (conversation) => {
-      if (conversation.name) {
-        return conversation.name.charAt(0).toUpperCase()
-      }
-      return 'C'
-    }
-    
-    const getInitials = (firstName, lastName) => {
-      return `${firstName?.charAt(0) || ''}${lastName?.charAt(0) || ''}`.toUpperCase()
-    }
-    
-    const getParticipantNames = (conversation) => {
-      if (conversation.participants) {
-        return conversation.participants
-          .map(p => `${p.user.firstName} ${p.user.lastName}`)
-          .join(', ')
-      }
-      return ''
-    }
-    
-    const formatTime = (timestamp) => {
-      if (!timestamp) return ''
-      const date = new Date(timestamp)
-      const now = new Date()
-      const diff = now - date
-      
-      if (diff < 24 * 60 * 60 * 1000) {
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      } else {
-        return date.toLocaleDateString()
-      }
-    }
-    
-    const formatFileSize = (bytes) => {
-      if (bytes === 0) return '0 Bytes'
-      const k = 1024
-      const sizes = ['Bytes', 'KB', 'MB', 'GB']
-      const i = Math.floor(Math.log(bytes) / Math.log(k))
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-    }
-    
-    // Socket setup
-    const setupSocket = () => {
-      // Initialize socket connection here
-      // This would connect to your Socket.IO server
-    }
-    
-    const handleNewMessage = (message) => {
-      if (message.conversationId === selectedConversation.value?._id) {
-        messages.value.push(message.message)
-        scrollToBottom()
-      }
-      loadConversations() // Refresh conversation list
-    }
-    
-    // Lifecycle
-    onMounted(async () => {
-      await loadConversations()
-      await loadAvailableUsers() // Load available users when component mounts
-      setupSocket()
-    })
-    
-    onUnmounted(() => {
-      if (socket) {
-        socket.disconnect()
-      }
-    })
-    
-    return {
-      // Data
-      conversations,
-      selectedConversation,
-      messages,
-      newMessage,
-      loading,
-      sidebarCollapsed,
-      showNewConversationModal,
-      showFileUpload,
-      selectedFiles,
-      availableUsers,
-      newConversation,
-      currentUser,
-      
-      // Methods
-      loadConversations,
-      selectConversation,
-      sendMessage,
-      createConversation,
-      handleFileUpload,
-      removeFile,
-      uploadFiles,
-      getConversationInitials,
-      getInitials,
-      getParticipantNames,
-      formatTime,
-      formatFileSize
-    }
+    showNewConversationModal.value = false
+    loadConversations()
+    resetNewConversation()
+  } catch (error) {
+    console.error('Failed to create conversation:', error)
   }
 }
+
+const handleFileUpload = (event) => {
+  const files = Array.from(event.target.files)
+  selectedFiles.value = files
+}
+
+const removeFile = (file) => {
+  const index = selectedFiles.value.indexOf(file)
+  if (index > -1) {
+    selectedFiles.value.splice(index, 1)
+  }
+}
+
+const uploadFiles = async () => {
+  if (!selectedConversation.value || selectedFiles.value.length === 0) return
+  
+  try {
+    const formData = new FormData()
+    formData.append('conversationId', selectedConversation.value._id)
+    selectedFiles.value.forEach(file => {
+      formData.append('files', file)
+    })
+    
+    await chatService.sendFileMessage(formData)
+    showFileUpload.value = false
+    selectedFiles.value = []
+  } catch (error) {
+    console.error('Failed to upload files:', error)
+  }
+}
+
+const joinConversation = (conversationId) => {
+  if (socket) {
+    socket.emit('joinConversation', conversationId)
+  }
+}
+
+const scrollToBottom = () => {
+  nextTick(() => {
+    const container = document.querySelector('.messages-container')
+    if (container) {
+      container.scrollTop = container.scrollHeight
+    }
+  })
+}
+
+const resetNewConversation = () => {
+  newConversation.value = {
+    type: 'direct',
+    name: '',
+    participantId: '',
+    participantIds: []
+  }
+}
+
+// Utility methods
+const getConversationInitials = (conversation) => {
+  if (conversation.name) {
+    return conversation.name.charAt(0).toUpperCase()
+  }
+  return 'C'
+}
+
+const getInitials = (firstName, lastName) => {
+  return `${firstName?.charAt(0) || ''}${lastName?.charAt(0) || ''}`.toUpperCase()
+}
+
+const getParticipantNames = (conversation) => {
+  if (conversation.participants) {
+    return conversation.participants
+      .map(p => `${p.user.firstName} ${p.user.lastName}`)
+      .join(', ')
+  }
+  return ''
+}
+
+const formatTime = (timestamp) => {
+  if (!timestamp) return ''
+  const date = new Date(timestamp)
+  const now = new Date()
+  const diff = now - date
+  
+  if (diff < 24 * 60 * 60 * 1000) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  } else {
+    return date.toLocaleDateString()
+  }
+}
+
+const formatFileSize = (bytes) => {
+  if (bytes === 0) return '0 Bytes'
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+// Socket setup
+const setupSocket = () => {
+  // Initialize socket connection here
+  // This would connect to your Socket.IO server
+}
+
+const handleNewMessage = (message) => {
+  if (message.conversationId === selectedConversation.value?._id) {
+    messages.value.push(message.message)
+    scrollToBottom()
+  }
+  loadConversations() // Refresh conversation list
+}
+
+// Lifecycle
+onMounted(async () => {
+  await loadConversations()
+  await loadAvailableUsers()
+  setupSocket()
+})
+
+onUnmounted(() => {
+  if (socket) {
+    socket.disconnect()
+  }
+})
 </script>
 
 <style scoped>

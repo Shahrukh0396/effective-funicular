@@ -49,18 +49,22 @@ export const sprintService = {
       })
       
       const data = await response.json()
+      console.log(data)
       
       if (!response.ok) {
         throw new Error(data.message || 'Failed to fetch sprints')
       }
 
       if (data.success) {
-        sprints.value = data.data
+        sprints.value = data.data || []
+      } else {
+        sprints.value = []
       }
 
       return data
     } catch (error) {
       console.error('Error fetching sprints:', error)
+      sprints.value = []
       throw error
     }
   },

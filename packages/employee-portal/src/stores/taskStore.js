@@ -78,7 +78,7 @@ export const useTaskStore = defineStore('tasks', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await axios.get('/api/employee/tasks/available')
+      const response = await axios.get('/api/tasks?status=available')
       availableTasks.value = response.data
       return response.data
     } catch (err) {
@@ -94,7 +94,7 @@ export const useTaskStore = defineStore('tasks', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await axios.get('/api/employee/tasks/my-tasks')
+      const response = await axios.get('/api/tasks?assignedTo=me')
       myTasks.value = response.data
       return response.data
     } catch (err) {
@@ -110,7 +110,7 @@ export const useTaskStore = defineStore('tasks', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await axios.get('/api/employee/tasks/history')
+      const response = await axios.get('/api/tasks?status=completed')
       taskHistory.value = response.data
       return response.data
     } catch (err) {
@@ -125,7 +125,9 @@ export const useTaskStore = defineStore('tasks', () => {
   const claimTask = async (taskId) => {
     error.value = null
     try {
-      const response = await axios.post(`/api/employee/tasks/${taskId}/claim`)
+      const response = await axios.post(`/api/tasks/${taskId}/assign`, {
+        assignedTo: 'me'
+      })
       // Refresh tasks
       await fetchAvailableTasks()
       await fetchMyTasks()
@@ -140,7 +142,9 @@ export const useTaskStore = defineStore('tasks', () => {
   const unclaimTask = async (taskId) => {
     error.value = null
     try {
-      const response = await axios.post(`/api/employee/tasks/${taskId}/unclaim`)
+      const response = await axios.post(`/api/tasks/${taskId}/assign`, {
+        assignedTo: null
+      })
       // Refresh tasks
       await fetchAvailableTasks()
       await fetchMyTasks()
@@ -155,7 +159,7 @@ export const useTaskStore = defineStore('tasks', () => {
   const startTask = async (taskId) => {
     error.value = null
     try {
-      const response = await axios.post(`/api/employee/tasks/${taskId}/start`)
+      const response = await axios.post(`/api/tasks/${taskId}/start`)
       // Refresh tasks
       await fetchMyTasks()
       return response.data
@@ -169,7 +173,7 @@ export const useTaskStore = defineStore('tasks', () => {
   const stopTask = async (taskId) => {
     error.value = null
     try {
-      const response = await axios.post(`/api/employee/tasks/${taskId}/stop`)
+      const response = await axios.post(`/api/tasks/${taskId}/stop`)
       // Refresh tasks
       await fetchMyTasks()
       return response.data
@@ -183,8 +187,8 @@ export const useTaskStore = defineStore('tasks', () => {
   const updateTaskStatus = async (taskId, status) => {
     error.value = null
     try {
-      const response = await axios.put(`/api/employee/tasks/${taskId}/update-status`, {
-        status
+      const response = await axios.put(`/api/tasks/${taskId}`, {
+        status: status
       })
       // Refresh tasks
       await fetchMyTasks()
@@ -193,6 +197,23 @@ export const useTaskStore = defineStore('tasks', () => {
     } catch (err) {
       error.value = err.response?.data?.message || 'Failed to update task status'
       console.error('Error updating task status:', err)
+      throw err
+    }
+  }
+
+  const updateTaskProgress = async (taskId, progress) => {
+    error.value = null
+    try {
+      const response = await axios.put(`/api/tasks/${taskId}`, {
+        progress: progress
+      })
+      // Refresh tasks
+      await fetchMyTasks()
+      await fetchAvailableTasks()
+      return response.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Failed to update task progress'
+      console.error('Error updating task progress:', err)
       throw err
     }
   }
@@ -242,6 +263,7 @@ export const useTaskStore = defineStore('tasks', () => {
     startTask,
     stopTask,
     updateTaskStatus,
+    updateTaskProgress,
     pickTask,
     submitTask,
     clearError

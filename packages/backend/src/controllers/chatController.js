@@ -366,10 +366,12 @@ const createConversation = async (req, res) => {
     if (type === 'direct') {
       // Create direct conversation
       const participant = await User.findById(participantId)
-      if (!participant || participant.vendor.toString() !== req.user.vendor.toString()) {
+      const userVendor = (req.user.vendor || req.user.vendorId || '').toString();
+      const participantVendor = (participant && (participant.vendor || participant.vendorId) || '').toString();
+      if (!participant || !userVendor || !participantVendor || participantVendor !== userVendor) {
         return res.status(400).json({
           success: false,
-          message: 'Participant not found'
+          message: 'Participant not found or vendor mismatch'
         })
       }
       
@@ -467,10 +469,12 @@ const createDirectConversation = async (req, res) => {
     
     // Check if participant exists
     const participant = await User.findById(participantId)
-    if (!participant) {
+    const userVendor = (req.user.vendor || req.user.vendorId || '').toString();
+    const participantVendor = (participant && (participant.vendor || participant.vendorId) || '').toString();
+    if (!participant || !userVendor || !participantVendor || participantVendor !== userVendor) {
       return res.status(404).json({
         success: false,
-        message: 'Participant not found'
+        message: 'Participant not found or vendor mismatch'
       })
     }
     

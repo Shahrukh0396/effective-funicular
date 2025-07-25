@@ -25,10 +25,14 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await axios.post('/api/employee/login', { email, password })
-      const { token: newToken, user: userData } = response.data
+      const response = await axios.post('/api/auth/login', { 
+        email, 
+        password,
+        portalType: 'employee'
+      })
+      const { accessToken, user: userData } = response.data.data
       user.value = userData
-      setToken(newToken)
+      setToken(accessToken)
       return true
     } catch (err) {
       error.value = err.response?.data?.message || 'Failed to login'
@@ -40,7 +44,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   const logout = async () => {
     try {
-      await axios.post('/api/employee/logout')
+      await axios.post('/api/auth/logout')
     } catch (err) {
       console.error('Logout error:', err)
     } finally {
@@ -52,8 +56,8 @@ export const useAuthStore = defineStore('auth', () => {
   const checkAuth = async () => {
     if (!token.value) return false
     try {
-      const response = await axios.get('/api/employee/me')
-      user.value = response.data
+      const response = await axios.get('/api/auth/me')
+      user.value = response.data.data.user
       return true
     } catch (err) {
       setToken(null)

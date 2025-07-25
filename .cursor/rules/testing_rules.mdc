@@ -1,0 +1,657 @@
+# Testing Rules - Linton Client Portal Multi-Tenant SaaS Platform
+
+## Testing Strategy Overview
+
+### Testing Pyramid for Multi-Tenant SaaS
+```
+                    E2E Tests (10%)
+                 ┌─────────────────┐
+                 │ Portal Integration│
+                 │ User Journeys    │
+                 └─────────────────┘
+              Integration Tests (20%)
+           ┌─────────────────────────┐
+           │ API + Database          │
+           │ Portal Communication    │
+           │ Multi-tenant Isolation  │
+           └─────────────────────────┘
+         Unit Tests (70%)
+    ┌─────────────────────────────────┐
+    │ Components, Services, Utils     │
+    │ Stores, Validators, Helpers     │
+    │ Business Logic, Data Models     │
+    └─────────────────────────────────┘
+```
+
+## Testing Framework Stack
+
+### Frontend Testing
+- **Unit Testing**: Vitest + Vue Test Utils
+- **Component Testing**: @vue/test-utils + @testing-library/vue
+- **E2E Testing**: Playwright (for cross-portal workflows)
+- **Visual Testing**: Percy or Chromatic
+- **Performance Testing**: Lighthouse CI
+
+### Backend Testing
+- **Unit Testing**: Jest + Supertest
+- **Database Testing**: MongoDB Memory Server
+- **API Testing**: Supertest + chai/expect
+- **Load Testing**: Artillery.js
+- **Security Testing**: OWASP ZAP
+
+### Test Environment Setup
+```javascript
+// ✅ DO: Use separate test databases per portal
+const testConfig = {
+  mongodb: {
+    client: 'mongodb://localhost:27017/linton-test-client',
+    employee: 'mongodb://localhost:27017/linton-test-employee', 
+    admin: 'mongodb://localhost:27017/linton-test-admin',
+    marketing: 'mongodb://localhost:27017/linton-test-marketing',
+    superadmin: 'mongodb://localhost:27017/linton-test-superadmin'
+  },
+  redis: 'redis://localhost:6379/1', // Different DB than production
+  testVendorIds: ['vendor1-test', 'vendor2-test', 'vendor3-test']
+}
+```
+
+## Unit Testing Rules
+
+### Vue Component Testing
+```javascript
+// ✅ DO: Test component behavior, not implementation
+import { mount } from '@vue/test-utils'
+import { createTestingPinia } from '@pinia/testing'
+import ProjectCard from '@/components/ProjectCard.vue'
+
+describe('ProjectCard.vue', () => {
+  let wrapper
+  
+  beforeEach(() => {
+    wrapper = mount(ProjectCard, {
+      global: {
+        plugins: [createTestingPinia()],
+      },
+      props: {
+        project: {
+          id: 'proj-1',
+          name: 'Test Project',
+          status: 'active',
+          vendorId: 'vendor-1'
+        }
+      }
+    })
+  })
+
+  it('displays project name and status', () => {
+    expect(wrapper.find('[data-testid="project-name"]').text()).toBe('Test Project')
+    expect(wrapper.find('[data-testid="project-status"]').text()).toBe('Active')
+  })
+
+  it('emits select event when clicked', async () => {
+    await wrapper.find('[data-testid="project-card"]').trigger('click')
+    expect(wrapper.emitted('select')).toBeTruthy()
+    expect(wrapper.emitted('select')[0]).toEqual(['proj-1'])
+  })
+})
+
+// ❌ DON'T: Test internal implementation details
+it('calls handleClick method', () => {
+  const spy = vi.spyOn(wrapper.vm, 'handleClick')
+  wrapper.find('button').trigger('click')
+  expect(spy).toHaveBeenCalled() // Testing implementation, not behavior
+})
+```
+
+### Pinia Store Testing
+```javascript
+// ✅ DO: Test store actions and state changes
+import { setActivePinia, createPinia } from 'pinia'
+import { useProjectStore } from '@/stores/project'
+
+describe('Project Store', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('loads projects for specific vendor', async () => {
+    const store = useProjectStore()
+    const mockProjects = [
+      { id: '1', name: 'Project 1', vendorId: 'vendor-1' },
+      { id: '2', name: 'Project 2', vendorId: 'vendor-1' }
+    ]
+    
+    vi.mocked(api.getProjects).mockResolvedValue(mockProjects)
+    
+    await store.loadProjects('vendor-1')
+    
+    expect(store.projects).toEqual(mockProjects)
+    expect(store.isLoading).toBe(false)
+  })
+
+  it('filters active projects correctly', () => {
+    const store = useProjectStore()
+    store.projects = [
+      { id: '1', status: 'active' },
+      { id: '2', status: 'completed' },
+      { id: '3', status: 'active' }
+    ]
+    
+    expect(store.activeProjects).toHaveLength(2)
+    expect(store.activeProjects.every(p => p.status === 'active')).toBe(true)
+  })
+})
+```
+
+### API Testing (Backend)
+```javascript
+// ✅ DO: Test API endpoints with multi-tenant context
+import request from 'supertest'
+import app from '../app'
+import { createTestVendor, createTestUser } from '../utils/testHelpers'
+
+describe('Projects API', () => {
+  let vendor1, vendor2, adminUser1, adminUser2, authToken1, authToken2
+
+  beforeEach(async () => {
+    // Create isolated test vendors
+    vendor1 = await createTestVendor({ name: 'Vendor 1' })
+    vendor2 = await createTestVendor({ name: 'Vendor 2' })
+    
+    // Create users for each vendor
+    adminUser1 = await createTestUser({
+      vendorId: vendor1._id,
+      role: 'admin',
+      email: 'admin1@test.com'
+    })
+    adminUser2 = await createTestUser({
+      vendorId: vendor2._id,
+      role: 'admin', 
+      email: 'admin2@test.com'
+    })
+    
+    authToken1 = generateJWT({ userId: adminUser1._id, vendorId: vendor1._id })
+    authToken2 = generateJWT({ userId: adminUser2._id, vendorId: vendor2._id })
+  })
+
+  describe('GET /api/v1/vendors/:vendorId/projects', () => {
+    it('returns only projects for the specified vendor', async () => {
+      // Create projects for both vendors
+      await createTestProject({ vendorId: vendor1._id, name: 'Vendor 1 Project' })
+      await createTestProject({ vendorId: vendor2._id, name: 'Vendor 2 Project' })
+      
+      const response = await request(app)
+        .get(`/api/v1/vendors/${vendor1._id}/projects`)
+        .set('Authorization', `Bearer ${authToken1}`)
+        .expect(200)
+      
+      expect(response.body.data).toHaveLength(1)
+      expect(response.body.data[0].name).toBe('Vendor 1 Project')
+      expect(response.body.data[0].vendorId).toBe(vendor1._id.toString())
+    })
+
+    it('prevents cross-vendor data access', async () => {
+      await request(app)
+        .get(`/api/v1/vendors/${vendor2._id}/projects`)
+        .set('Authorization', `Bearer ${authToken1}`) // Wrong vendor token
+        .expect(403)
+    })
+  })
+})
+```
+
+## Integration Testing Rules
+
+### Multi-Tenant Data Isolation Testing
+```javascript
+// ✅ DO: Always test vendor data isolation
+describe('Multi-Tenant Data Isolation', () => {
+  it('ensures complete vendor data separation', async () => {
+    const vendor1 = await createTestVendor()
+    const vendor2 = await createTestVendor()
+    
+    // Create identical data for both vendors
+    const project1 = await createTestProject({
+      vendorId: vendor1._id,
+      name: 'Shared Project Name'
+    })
+    const project2 = await createTestProject({
+      vendorId: vendor2._id,
+      name: 'Shared Project Name'
+    })
+    
+    // Test database queries return isolated data
+    const vendor1Projects = await Project.find({ vendorId: vendor1._id })
+    const vendor2Projects = await Project.find({ vendorId: vendor2._id })
+    
+    expect(vendor1Projects).toHaveLength(1)
+    expect(vendor2Projects).toHaveLength(1)
+    expect(vendor1Projects[0]._id).not.toEqual(vendor2Projects[0]._id)
+  })
+
+  it('prevents data leakage in aggregation queries', async () => {
+    const vendor1 = await createTestVendor()
+    const vendor2 = await createTestVendor()
+    
+    await createTestProject({ vendorId: vendor1._id, status: 'active' })
+    await createTestProject({ vendorId: vendor2._id, status: 'active' })
+    
+    const stats = await Project.aggregate([
+      { $match: { vendorId: vendor1._id } },
+      { $group: { _id: '$status', count: { $sum: 1 } } }
+    ])
+    
+    expect(stats).toHaveLength(1)
+    expect(stats[0].count).toBe(1) // Only vendor1's project
+  })
+})
+```
+
+### Portal Communication Testing
+```javascript
+// ✅ DO: Test real-time communication between portals
+describe('Portal Communication', () => {
+  let clientSocket, employeeSocket, io
+
+  beforeEach(async () => {
+    io = require('../socketServer')
+    clientSocket = Client('http://localhost:3000/client-portal')
+    employeeSocket = Client('http://localhost:3000/employee-portal')
+  })
+
+  it('broadcasts task updates from employee to client portal', (done) => {
+    const vendorId = 'vendor-1'
+    const taskId = 'task-1'
+    
+    // Client portal listens for task updates
+    clientSocket.emit('join-vendor-room', vendorId)
+    clientSocket.on('task:updated', (data) => {
+      expect(data.taskId).toBe(taskId)
+      expect(data.status).toBe('completed')
+      done()
+    })
+    
+    // Employee portal updates task
+    employeeSocket.emit('join-vendor-room', vendorId)
+    employeeSocket.emit('task:update', {
+      taskId,
+      status: 'completed',
+      vendorId
+    })
+  })
+})
+```
+
+### Authentication & Authorization Testing
+```javascript
+// ✅ DO: Test all permission scenarios
+describe('Authorization Matrix', () => {
+  const testCases = [
+    // [role, portal, endpoint, expectedStatus]
+    ['client', 'client', 'GET /projects', 200],
+    ['client', 'employee', 'GET /tasks', 403],
+    ['client', 'admin', 'GET /analytics', 403],
+    ['employee', 'client', 'GET /projects', 403],
+    ['employee', 'employee', 'GET /tasks', 200],
+    ['employee', 'admin', 'GET /analytics', 403],
+    ['admin', 'client', 'GET /projects', 200],
+    ['admin', 'employee', 'GET /tasks', 200],
+    ['admin', 'admin', 'GET /analytics', 200],
+    ['super-admin', 'super-admin', 'GET /platform/vendors', 200],
+    ['admin', 'super-admin', 'GET /platform/vendors', 403]
+  ]
+
+  testCases.forEach(([role, portal, endpoint, expectedStatus]) => {
+    it(`${role} ${expectedStatus === 200 ? 'can' : 'cannot'} access ${endpoint} in ${portal} portal`, async () => {
+      const user = await createTestUser({ role })
+      const token = generateJWT({ userId: user._id, role, vendorId: user.vendorId })
+      
+      await request(app)
+        .get(endpoint)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(expectedStatus)
+    })
+  })
+})
+```
+
+## End-to-End Testing Rules
+
+### Cross-Portal User Journeys
+```javascript
+// ✅ DO: Test complete business workflows across portals
+import { test, expect } from '@playwright/test'
+
+test.describe('Complete Project Lifecycle', () => {
+  test('client creates project → employee works on tasks → client reviews progress', async ({ browser }) => {
+    // Setup multiple browser contexts for different portals
+    const clientContext = await browser.newContext()
+    const employeeContext = await browser.newContext()
+    
+    const clientPage = await clientContext.newPage()
+    const employeePage = await employeeContext.newPage()
+    
+    // Step 1: Client creates project
+    await clientPage.goto('/client-portal/login')
+    await clientPage.fill('[data-testid="email"]', 'client@vendor1.com')
+    await clientPage.fill('[data-testid="password"]', 'password')
+    await clientPage.click('[data-testid="login-btn"]')
+    
+    await clientPage.goto('/client-portal/projects/new')
+    await clientPage.fill('[data-testid="project-name"]', 'E2E Test Project')
+    await clientPage.selectOption('[data-testid="project-type"]', 'web-development')
+    await clientPage.click('[data-testid="create-project"]')
+    
+    // Verify project creation
+    await expect(clientPage.locator('[data-testid="success-message"]')).toBeVisible()
+    const projectId = await clientPage.getAttribute('[data-testid="project-id"]', 'data-id')
+    
+    // Step 2: Employee receives and works on project tasks
+    await employeePage.goto('/employee-portal/login')
+    await employeePage.fill('[data-testid="email"]', 'employee@vendor1.com')
+    await employeePage.fill('[data-testid="password"]', 'password')
+    await employeePage.click('[data-testid="login-btn"]')
+    
+    await employeePage.goto('/employee-portal/tasks')
+    await employeePage.click(`[data-testid="task-${projectId}"]`)
+    await employeePage.click('[data-testid="start-task"]')
+    
+    // Simulate work time
+    await employeePage.waitForTimeout(2000)
+    await employeePage.click('[data-testid="complete-task"]')
+    
+    // Step 3: Client sees real-time progress update
+    await clientPage.reload()
+    await expect(clientPage.locator(`[data-testid="project-${projectId}-status"]`)).toHaveText('In Progress')
+  })
+})
+```
+
+### Performance Testing
+```javascript
+// ✅ DO: Test performance under multi-tenant load
+describe('Performance Testing', () => {
+  it('handles concurrent requests from multiple vendors', async () => {
+    const vendors = await Promise.all([
+      createTestVendor(),
+      createTestVendor(),
+      createTestVendor()
+    ])
+    
+    const startTime = Date.now()
+    
+    // Simulate concurrent requests from different vendors
+    const requests = vendors.map(vendor => 
+      request(app)
+        .get(`/api/v1/vendors/${vendor._id}/projects`)
+        .set('Authorization', `Bearer ${generateJWT({ vendorId: vendor._id })}`)
+    )
+    
+    const responses = await Promise.all(requests)
+    const endTime = Date.now()
+    
+    // Verify all requests succeeded
+    responses.forEach(response => {
+      expect(response.status).toBe(200)
+    })
+    
+    // Verify response time under load
+    expect(endTime - startTime).toBeLessThan(5000) // 5 second threshold
+  })
+})
+```
+
+## Test Data Management
+
+### Test Data Factory Pattern
+```javascript
+// ✅ DO: Use factory pattern for test data creation
+class TestDataFactory {
+  static async createVendor(overrides = {}) {
+    return await Vendor.create({
+      name: faker.company.name(),
+      email: faker.internet.email(),
+      subscription: 'pro',
+      status: 'active',
+      ...overrides
+    })
+  }
+  
+  static async createUser(overrides = {}) {
+    const vendor = overrides.vendorId ? 
+      await Vendor.findById(overrides.vendorId) : 
+      await this.createVendor()
+      
+    return await User.create({
+      name: faker.person.fullName(),
+      email: faker.internet.email(),
+      role: 'employee',
+      vendorId: vendor._id,
+      ...overrides
+    })
+  }
+  
+  static async createProject(overrides = {}) {
+    const vendor = overrides.vendorId ? 
+      await Vendor.findById(overrides.vendorId) : 
+      await this.createVendor()
+      
+    return await Project.create({
+      name: faker.lorem.words(3),
+      description: faker.lorem.paragraph(),
+      status: 'planning',
+      vendorId: vendor._id,
+      ...overrides
+    })
+  }
+}
+```
+
+### Test Database Seeding
+```javascript
+// ✅ DO: Create comprehensive test scenarios
+export class TestScenarios {
+  static async createMultiVendorScenario() {
+    // Create 3 vendors with different subscription levels
+    const basicVendor = await TestDataFactory.createVendor({ 
+      subscription: 'basic',
+      name: 'Basic Vendor'
+    })
+    const proVendor = await TestDataFactory.createVendor({ 
+      subscription: 'pro',
+      name: 'Pro Vendor'
+    })
+    const enterpriseVendor = await TestDataFactory.createVendor({ 
+      subscription: 'enterprise',
+      name: 'Enterprise Vendor'
+    })
+    
+    // Create users for each vendor
+    const users = await Promise.all([
+      TestDataFactory.createUser({ vendorId: basicVendor._id, role: 'admin' }),
+      TestDataFactory.createUser({ vendorId: basicVendor._id, role: 'employee' }),
+      TestDataFactory.createUser({ vendorId: proVendor._id, role: 'admin' }),
+      TestDataFactory.createUser({ vendorId: proVendor._id, role: 'employee' }),
+      TestDataFactory.createUser({ vendorId: enterpriseVendor._id, role: 'admin' })
+    ])
+    
+    // Create projects with different statuses
+    const projects = await Promise.all([
+      TestDataFactory.createProject({ vendorId: basicVendor._id, status: 'active' }),
+      TestDataFactory.createProject({ vendorId: proVendor._id, status: 'completed' }),
+      TestDataFactory.createProject({ vendorId: enterpriseVendor._id, status: 'planning' })
+    ])
+    
+    return { vendors: [basicVendor, proVendor, enterpriseVendor], users, projects }
+  }
+}
+```
+
+## Testing Best Practices
+
+### Test Organization
+```javascript
+// ✅ DO: Organize tests by feature/portal
+src/
+├── tests/
+│   ├── unit/
+│   │   ├── client-portal/
+│   │   ├── employee-portal/
+│   │   ├── admin-portal/
+│   │   ├── marketing-website/
+│   │   └── super-admin-portal/
+│   ├── integration/
+│   │   ├── api/
+│   │   ├── database/
+│   │   └── realtime/
+│   ├── e2e/
+│   │   ├── user-journeys/
+│   │   ├── cross-portal/
+│   │   └── performance/
+│   └── fixtures/
+│       ├── users.json
+│       ├── projects.json
+│       └── vendors.json
+```
+
+### Test Naming Conventions
+```javascript
+// ✅ DO: Use descriptive test names
+describe('Client Portal - Project Management', () => {
+  describe('when client creates a new project', () => {
+    it('should create project with correct vendor association', () => {})
+    it('should send notification to assigned team members', () => {})
+    it('should prevent creation if subscription limit exceeded', () => {})
+  })
+  
+  describe('when client views project progress', () => {
+    it('should show only projects belonging to their vendor', () => {})
+    it('should display real-time task updates', () => {})
+    it('should allow commenting on project milestones', () => {})
+  })
+})
+
+// ❌ DON'T: Use vague test names
+it('creates project', () => {})
+it('shows data', () => {})
+it('works correctly', () => {})
+```
+
+### Continuous Testing Rules
+
+### Test Coverage Requirements
+```javascript
+// ✅ DO: Maintain high coverage with meaningful tests
+const coverageThresholds = {
+  global: {
+    branches: 80,
+    functions: 85,
+    lines: 85,
+    statements: 85
+  },
+  './src/stores/**/*.js': {
+    branches: 90,
+    functions: 95,
+    lines: 95,
+    statements: 95
+  },
+  './src/api/**/*.js': {
+    branches: 85,
+    functions: 90,
+    lines: 90,
+    statements: 90
+  }
+}
+```
+
+### CI/CD Testing Pipeline
+```yaml
+# ✅ DO: Run tests in parallel by portal
+test-matrix:
+  strategy:
+    matrix:
+      portal: [client, employee, admin, marketing, super-admin]
+  steps:
+    - name: Unit Tests - ${{ matrix.portal }}
+      run: npm run test:unit:${{ matrix.portal }}
+    
+    - name: Integration Tests - ${{ matrix.portal }}
+      run: npm run test:integration:${{ matrix.portal }}
+```
+
+### Security Testing Rules
+```javascript
+// ✅ DO: Test security vulnerabilities specific to multi-tenancy
+describe('Security Testing', () => {
+  it('prevents SQL injection in vendor-specific queries', async () => {
+    const maliciousVendorId = "'; DROP TABLE projects; --"
+    
+    await request(app)
+      .get(`/api/v1/vendors/${maliciousVendorId}/projects`)
+      .set('Authorization', `Bearer ${validToken}`)
+      .expect(400) // Should reject invalid vendorId format
+  })
+  
+  it('prevents cross-vendor data access via parameter manipulation', async () => {
+    const vendor1Token = generateJWT({ vendorId: 'vendor1' })
+    
+    await request(app)
+      .get('/api/v1/vendors/vendor2/projects') // Different vendor
+      .set('Authorization', `Bearer ${vendor1Token}`)
+      .expect(403)
+  })
+  
+  it('prevents privilege escalation through role manipulation', async () => {
+    const employeeToken = generateJWT({ role: 'employee', vendorId: 'vendor1' })
+    
+    await request(app)
+      .post('/api/v1/vendors/vendor1/users')
+      .set('Authorization', `Bearer ${employeeToken}`)
+      .send({ role: 'admin' }) // Trying to create admin user
+      .expect(403)
+  })
+})
+```
+
+## Mock and Stub Rules
+
+### External Service Mocking
+```javascript
+// ✅ DO: Mock external services consistently
+beforeEach(() => {
+  // Mock Stripe
+  vi.mock('stripe', () => ({
+    default: vi.fn(() => ({
+      subscriptions: {
+        create: vi.fn().mockResolvedValue({ id: 'sub_123' }),
+        update: vi.fn().mockResolvedValue({ id: 'sub_123' }),
+        cancel: vi.fn().mockResolvedValue({ id: 'sub_123', status: 'canceled' })
+      }
+    }))
+  }))
+  
+  // Mock AWS S3
+  vi.mock('aws-sdk', () => ({
+    S3: vi.fn(() => ({
+      upload: vi.fn().mockReturnValue({
+        promise: () => Promise.resolve({ Location: 'https://s3.example.com/file.pdf' })
+      })
+    }))
+  }))
+  
+  // Mock Socket.io
+  vi.mock('socket.io', () => ({
+    default: vi.fn(() => ({
+      emit: vi.fn(),
+      to: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis()
+    }))
+  }))
+})
+```
+
+Remember: In a multi-tenant SaaS platform, testing data isolation and security is as important as testing functionality. Always verify that vendor data remains completely separate and that users can only access resources they're authorized to see.---
+description:
+globs:
+alwaysApply: false
+---

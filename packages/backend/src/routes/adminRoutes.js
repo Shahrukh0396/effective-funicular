@@ -1,1364 +1,748 @@
 const express = require('express')
-const { body, validationResult } = require('express-validator')
-const { auth, authorize } = require('../middleware/auth')
-const { validateRequest } = require('../middleware/validation')
-const { generalLimiter } = require('../middleware/security')
+const rateLimit = require('express-rate-limit')
 const User = require('../models/User')
-const Task = require('../models/Task')
-const Project = require('../models/Project')
-const Attendance = require('../models/Attendance')
-const TimeEntry = require('../models/TimeEntry')
+const Vendor = require('../models/Vendor')
+const Session = require('../models/Session')
+const AuditLog = require('../models/AuditLog')
+const authService = require('../services/authService')
+const sessionService = require('../services/sessionService')
+const { 
+  auth, 
+  authorize, 
+  hasPermission, 
+  requirePortalAccess,
+  superAdminOnly,
+  employeeOrAdmin,
+  validateSession 
+} = require('../middleware/auth')
+const config = require('../config')
 
 const router = express.Router()
 
-// Admin-specific middleware - only admins can access these routes
-router.use(auth)
-
-router.use(authorize('admin'))
-
-/**
- * @swagger
- * /api/admin/employees:
- *   get:
- *     summary: Get all employees
- *     description: Retrieve all employees with their attendance and performance data
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Employees retrieved successfully
- *       401:
- *         description: Unauthorized
- */
-router.get('/employees', async (req, res) => {
-  try {
-    const employees = await User.find({ role: { $in: ['employee', 'senior', 'lead'] } })
-      .select('-password -emailVerificationToken -passwordResetToken')
-      .sort({ createdAt: -1 })
-    
-    // Get today's attendance for each employee
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    
-    const employeesWithAttendance = await Promise.all(
-      employees.map(async (employee) => {
-        const attendance = await Attendance.findOne({
-          employee: employee._id,
-          date: {
-            $gte: today,
-            $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
-          }
-        })
-        
-        // Get today's time entries
-        const timeEntries = await TimeEntry.find({
-          user: employee._id,
-          startTime: {
-            $gte: today,
-            $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
-          }
-        })
-        
-        const hoursToday = timeEntries.reduce((sum, entry) => sum + entry.duration, 0)
-        
-        // Calculate performance based on completed tasks
-        const completedTasks = await Task.countDocuments({
-          assignedTo: employee._id,
-          status: 'done',
-          completedAt: {
-            $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // Last 30 days
-          }
-        })
-        
-        const totalTasks = await Task.countDocuments({
-          assignedTo: employee._id,
-          createdAt: {
-            $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // Last 30 days
-          }
-        })
-        
-        const performance = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
-        
-        return {
-          ...employee.toObject(),
-          attendanceStatus: attendance ? (attendance.checkOut ? 'checked_out' : 'checked_in') : 'absent',
-          hoursToday,
-          performance
-        }
-      })
-    )
-    
-    res.json(employeesWithAttendance)
-  } catch (error) {
-    console.error('Get employees error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+// Rate limiting for admin operations
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200, // limit each IP to 200 requests per windowMs
+  message: {
+    success: false,
+    message: 'Too many admin requests. Please try again later.'
   }
 })
 
-/**
- * @swagger
- * /api/admin/employees:
- *   post:
- *     summary: Create new employee
- *     description: Create a new employee account
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - firstName
- *               - lastName
- *               - email
- *               - password
- *               - role
- *             properties:
- *               firstName:
- *                 type: string
- *               lastName:
- *                 type: string
- *               email:
- *                 type: string
- *                 format: email
- *               password:
- *                 type: string
- *               role:
- *                 type: string
- *                 enum: [employee, senior, lead]
- *               position:
- *                 type: string
- *     responses:
- *       201:
- *         description: Employee created successfully
- *       400:
- *         description: Validation error
- */
-router.post('/employees', 
-  [
-    body('firstName').trim().isLength({ min: 2 }).withMessage('First name must be at least 2 characters'),
-    body('lastName').trim().isLength({ min: 2 }).withMessage('Last name must be at least 2 characters'),
-    body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
-    body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
-    body('role').isIn(['employee', 'senior', 'lead']).withMessage('Invalid role'),
-    body('position').optional().trim()
-  ],
-  validateRequest,
-  async (req, res) => {
-    try {
-      const { firstName, lastName, email, password, role, position } = req.body
-      
-      // Check if email already exists
-      const existingUser = await User.findOne({ email })
-      if (existingUser) {
-        return res.status(400).json({ message: 'Email already exists' })
-      }
-      
-      // Create new employee
-      const employee = new User({
-        firstName,
-        lastName,
-        email,
-        password,
-        role,
-        position,
-        isActive: true,
-        isEmailVerified: true // Admin creates verified accounts
-      })
-      
-      await employee.save()
-      
-      // Return employee data without password
-      const employeeData = {
-        id: employee._id,
-        firstName: employee.firstName,
-        lastName: employee.lastName,
-        email: employee.email,
-        role: employee.role,
-        position: employee.position,
-        isActive: employee.isActive,
-        createdAt: employee.createdAt
-      }
-      
-      res.status(201).json({
-        success: true,
-        message: 'Employee created successfully',
-        employee: employeeData
-      })
-    } catch (error) {
-      console.error('Create employee error:', error)
-      res.status(500).json({ message: 'Internal server error' })
-    }
-  }
-)
+// Apply rate limiting to all admin routes (disabled for tests)
+if (process.env.NODE_ENV !== 'test') {
+  router.use(adminLimiter)
+}
 
-/**
- * @swagger
- * /api/admin/employees/:id/details:
- *   get:
- *     summary: Get employee details
- *     description: Get detailed information about an employee including performance stats
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Employee details retrieved successfully
- *       404:
- *         description: Employee not found
- */
-router.get('/employees/:id/details', async (req, res) => {
-  try {
-    const employee = await User.findById(req.params.id)
-      .select('-password -emailVerificationToken -passwordResetToken')
-    
-    if (!employee) {
-      return res.status(404).json({ message: 'Employee not found' })
-    }
-    
-    // Get performance statistics
-    const last30Days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    
-    const [totalTasks, completedTasks, timeEntries, attendanceRecords] = await Promise.all([
-      Task.countDocuments({
-        assignedTo: employee._id,
-        createdAt: { $gte: last30Days }
-      }),
-      Task.countDocuments({
-        assignedTo: employee._id,
-        status: 'done',
-        completedAt: { $gte: last30Days }
-      }),
-      TimeEntry.find({
-        user: employee._id,
-        startTime: { $gte: last30Days }
-      }),
-      Attendance.find({
-        employee: employee._id,
-        date: { $gte: last30Days }
-      })
-    ])
-    
-    const totalHours = timeEntries.reduce((sum, entry) => sum + entry.duration, 0)
-    const avgHoursPerDay = attendanceRecords.length > 0 ? totalHours / attendanceRecords.length : 0
-    
-    const stats = {
-      totalTasks,
-      completedTasks,
-      totalHours,
-      avgHoursPerDay: Math.round(avgHoursPerDay * 10) / 10,
-      attendanceRate: attendanceRecords.length > 0 ? 
-        (attendanceRecords.filter(a => a.status === 'present').length / attendanceRecords.length * 100).toFixed(1) : 0
-    }
-    
-    res.json({
-      ...employee.toObject(),
-      stats
-    })
-  } catch (error) {
-    console.error('Get employee details error:', error)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
+// ==================== ADMIN DASHBOARD ====================
 
-/**
- * @swagger
- * /api/admin/employees/:id/toggle-status:
- *   put:
- *     summary: Toggle employee status
- *     description: Activate or deactivate an employee account
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Employee status updated successfully
- *       404:
- *         description: Employee not found
- */
-router.put('/employees/:id/toggle-status', async (req, res) => {
+// Get admin dashboard data
+router.get('/dashboard', auth, employeeOrAdmin, async (req, res) => {
   try {
-    const employee = await User.findById(req.params.id)
-    
-    if (!employee) {
-      return res.status(404).json({ message: 'Employee not found' })
-    }
-    
-    employee.isActive = !employee.isActive
-    await employee.save()
-    
-    res.json({
-      success: true,
-      message: `Employee ${employee.isActive ? 'activated' : 'deactivated'} successfully`,
-      isActive: employee.isActive
-    })
-  } catch (error) {
-    console.error('Toggle employee status error:', error)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
+    const vendorId = req.vendorId
 
-/**
- * @swagger
- * /api/admin/attendance/overview:
- *   get:
- *     summary: Get attendance overview
- *     description: Get attendance statistics for all employees
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: date
- *         schema:
- *           type: string
- *           format: date
- *     responses:
- *       200:
- *         description: Attendance overview retrieved successfully
- */
-router.get('/attendance/overview', async (req, res) => {
-  try {
-    const { date } = req.query
-    const targetDate = date ? new Date(date) : new Date()
-    targetDate.setHours(0, 0, 0, 0)
-    
-    const attendance = await Attendance.find({
-      date: {
-        $gte: targetDate,
-        $lt: new Date(targetDate.getTime() + 24 * 60 * 60 * 1000)
-      }
-    }).populate('employee', 'firstName lastName email role')
-    
-    const employees = await User.find({ role: { $in: ['employee', 'senior', 'lead'] } })
-    
-    const overview = {
-      totalEmployees: employees.length,
-      present: attendance.filter(a => a.status === 'present').length,
-      absent: employees.length - attendance.length,
-      late: attendance.filter(a => a.status === 'late').length,
-      totalHours: attendance.reduce((sum, a) => sum + (a.totalHours || 0), 0),
-      averageHours: attendance.length > 0 ? 
-        attendance.reduce((sum, a) => sum + (a.totalHours || 0), 0) / attendance.length : 0,
-      attendanceRecords: attendance
-    }
-    
-    res.json(overview)
-  } catch (error) {
-    console.error('Get attendance overview error:', error)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
-
-/**
- * @swagger
- * /api/admin/performance/overview:
- *   get:
- *     summary: Get performance overview
- *     description: Get performance statistics for all employees
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: startDate
- *         schema:
- *           type: string
- *           format: date
- *       - in: query
- *         name: endDate
- *         schema:
- *           type: string
- *           format: date
- *     responses:
- *       200:
- *         description: Performance overview retrieved successfully
- */
-router.get('/performance/overview', async (req, res) => {
-  try {
-    const { startDate, endDate } = req.query
-    const start = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    const end = endDate ? new Date(endDate) : new Date()
-    
-    const employees = await User.find({ role: { $in: ['employee', 'senior', 'lead'] } })
-    
-    const performanceData = await Promise.all(
-      employees.map(async (employee) => {
-        const [tasks, timeEntries] = await Promise.all([
-          Task.find({
-            assignedTo: employee._id,
-            createdAt: { $gte: start, $lte: end }
-          }),
-          TimeEntry.find({
-            user: employee._id,
-            startTime: { $gte: start, $lte: end }
-          })
-        ])
-        
-        const completedTasks = tasks.filter(t => t.status === 'done').length
-        const totalHours = timeEntries.reduce((sum, entry) => sum + entry.duration, 0)
-        const productivity = tasks.length > 0 ? (completedTasks / tasks.length) * 100 : 0
-        
-        return {
-          employee: {
-            id: employee._id,
-            name: `${employee.firstName} ${employee.lastName}`,
-            email: employee.email,
-            role: employee.role
-          },
-          stats: {
-            totalTasks: tasks.length,
-            completedTasks,
-            totalHours,
-            productivity: Math.round(productivity),
-            averageHoursPerDay: timeEntries.length > 0 ? totalHours / timeEntries.length : 0
+    // Get user statistics
+    const userStats = await User.aggregate([
+      { $match: { vendor: vendorId } },
+      {
+        $group: {
+          _id: '$role',
+          count: { $sum: 1 },
+          activeCount: {
+            $sum: { $cond: ['$isActive', 1, 0] }
           }
         }
-      })
-    )
-    
-    const overview = {
-      totalEmployees: employees.length,
-      averageProductivity: performanceData.length > 0 ? 
-        performanceData.reduce((sum, data) => sum + data.stats.productivity, 0) / performanceData.length : 0,
-      totalHours: performanceData.reduce((sum, data) => sum + data.stats.totalHours, 0),
-      totalTasks: performanceData.reduce((sum, data) => sum + data.stats.totalTasks, 0),
-      completedTasks: performanceData.reduce((sum, data) => sum + data.stats.completedTasks, 0),
-      performanceData
-    }
-    
-    res.json(overview)
-  } catch (error) {
-    console.error('Get performance overview error:', error)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
-
-/**
- * @swagger
- * /api/admin/gdpr/employee-data:
- *   get:
- *     summary: Get employee GDPR data
- *     description: Get employee data for GDPR compliance
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: employeeId
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Employee GDPR data retrieved successfully
- */
-router.get('/gdpr/employee-data', async (req, res) => {
-  try {
-    const { employeeId } = req.query
-    
-    if (!employeeId) {
-      return res.status(400).json({ message: 'Employee ID is required' })
-    }
-    
-    const employee = await User.findById(employeeId)
-      .select('-password')
-    
-    if (!employee) {
-      return res.status(404).json({ message: 'Employee not found' })
-    }
-    
-    // Get all data related to the employee
-    const [tasks, timeEntries, attendance] = await Promise.all([
-      Task.find({ assignedTo: employeeId }),
-      TimeEntry.find({ user: employeeId }),
-      Attendance.find({ employee: employeeId })
-    ])
-    
-    const gdprData = {
-      employee: {
-        id: employee._id,
-        firstName: employee.firstName,
-        lastName: employee.lastName,
-        email: employee.email,
-        role: employee.role,
-        position: employee.position,
-        createdAt: employee.createdAt,
-        lastLogin: employee.lastLogin,
-        gdpr: employee.gdpr
-      },
-      tasks: tasks.length,
-      timeEntries: timeEntries.length,
-      attendanceRecords: attendance.length,
-      dataSummary: {
-        totalTasks: tasks.length,
-        totalHours: timeEntries.reduce((sum, entry) => sum + entry.duration, 0),
-        totalAttendanceDays: attendance.length,
-        lastActivity: employee.lastActivity
       }
-    }
-    
-    res.json(gdprData)
-  } catch (error) {
-    console.error('Get GDPR data error:', error)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
+    ])
 
-/**
- * @swagger
- * /api/admin/gdpr/anonymize-employee:
- *   post:
- *     summary: Anonymize employee data
- *     description: Anonymize employee data for GDPR compliance
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - employeeId
- *             properties:
- *               employeeId:
- *                 type: string
- *     responses:
- *       200:
- *         description: Employee data anonymized successfully
- */
-router.post('/gdpr/anonymize-employee', async (req, res) => {
-  try {
-    const { employeeId } = req.body
-    
-    if (!employeeId) {
-      return res.status(400).json({ message: 'Employee ID is required' })
-    }
-    
-    const employee = await User.findById(employeeId)
-    
-    if (!employee) {
-      return res.status(404).json({ message: 'Employee not found' })
-    }
-    
-    // Anonymize employee data
-    await employee.anonymizeData()
-    
-    // Anonymize related data
-    await Promise.all([
-      TimeEntry.updateMany(
-        { user: employeeId },
-        { 
-          $set: {
-            'gdpr.anonymized': true,
-            description: null,
-            location: null,
-            deviceInfo: null
-          }
-        }
-      ),
-      Attendance.updateMany(
-        { employee: employeeId },
-        {
-          $set: {
-            'gdpr.anonymized': true,
-            location: null,
-            deviceInfo: null,
-            notes: null
-          }
-        }
-      )
-    ])
-    
-    res.json({
-      success: true,
-      message: 'Employee data anonymized successfully'
-    })
-  } catch (error) {
-    console.error('Anonymize employee error:', error)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
+    // Get session statistics
+    const sessionStats = await sessionService.getSessionStats()
 
-/**
- * @swagger
- * /api/admin/dashboard/analytics:
- *   get:
- *     summary: Get dashboard analytics
- *     description: Get comprehensive analytics for the admin dashboard
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Dashboard analytics retrieved successfully
- */
-router.get('/dashboard/analytics', async (req, res) => {
-  try {
-    const now = new Date()
-    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    const lastYear = new Date(now.getFullYear() - 1, now.getMonth(), 1)
-    
-    // Get all users by role
-    const [clients, employees, projects, tasks] = await Promise.all([
-      User.find({ role: 'client' }).countDocuments(),
-      User.find({ role: { $in: ['employee', 'senior', 'lead'] } }).countDocuments(),
-      Project.find().countDocuments(),
-      Task.find().countDocuments()
-    ])
-    
-    // Get revenue data (mock for now - replace with actual billing data)
-    const monthlyRevenue = 125000
-    const revenueGrowth = 12.5
-    const totalRevenue = 1250000
-    
-    // Get project statistics
-    const [activeProjects, completedProjects] = await Promise.all([
-      Project.find({ status: { $in: ['active', 'in_progress'] } }).countDocuments(),
-      Project.find({ status: 'completed' }).countDocuments()
-    ])
-    
-    // Get task statistics
-    const [pendingTasks, completedTasks] = await Promise.all([
-      Task.find({ status: { $in: ['pending', 'in_progress'] } }).countDocuments(),
-      Task.find({ status: 'done' }).countDocuments()
-    ])
-    
-    // Get team efficiency
-    const employeeUsers = await User.find({ role: { $in: ['employee', 'senior', 'lead'] } })
-    const efficiencyData = await Promise.all(
-      employeeUsers.map(async (employee) => {
-        const employeeTasks = await Task.find({ assignedTo: employee._id })
-        const completedEmployeeTasks = employeeTasks.filter(t => t.status === 'done')
-        return employeeTasks.length > 0 ? (completedEmployeeTasks.length / employeeTasks.length) * 100 : 0
-      })
-    )
-    
-    const teamEfficiency = efficiencyData.length > 0 ? 
-      efficiencyData.reduce((sum, eff) => sum + eff, 0) / efficiencyData.length : 0
-    
     // Get recent activity
-    const recentActivity = await Promise.all([
-      // Recent projects
-      Project.find().sort({ createdAt: -1 }).limit(3).populate('client', 'firstName lastName'),
-      // Recent tasks
-      Task.find().sort({ createdAt: -1 }).limit(3).populate('assignedTo', 'firstName lastName'),
-      // Recent users
-      User.find().sort({ createdAt: -1 }).limit(3)
-    ])
-    
-    const analytics = {
-      metrics: {
-        monthlyRevenue,
-        revenueGrowth,
-        activeClients: clients,
-        clientGrowth: 8.2,
-        activeProjects,
-        projectCompletionRate: projects > 0 ? Math.round((completedProjects / projects) * 100) : 0,
-        teamEfficiency: Math.round(teamEfficiency),
-        efficiencyChange: 5.2,
-        clientSatisfaction: 4.6,
-        satisfactionResponses: 38
-      },
-      projectStatuses: [
-        { name: 'On Track', count: Math.floor(activeProjects * 0.52), percentage: 52, color: 'bg-green-500' },
-        { name: 'At Risk', count: Math.floor(activeProjects * 0.26), percentage: 26, color: 'bg-yellow-500' },
-        { name: 'Delayed', count: Math.floor(activeProjects * 0.13), percentage: 13, color: 'bg-red-500' },
-        { name: 'Completed', count: completedProjects, percentage: Math.round((completedProjects / projects) * 100), color: 'bg-blue-500' }
-      ],
-      taskMetrics: [
-        { name: 'Completed', percentage: tasks > 0 ? Math.round((completedTasks / tasks) * 100) : 0 },
-        { name: 'In Progress', percentage: tasks > 0 ? Math.round((pendingTasks / tasks) * 100) : 0 },
-        { name: 'Pending', percentage: tasks > 0 ? Math.round(((tasks - completedTasks - pendingTasks) / tasks) * 100) : 0 }
-      ],
-      recentActivity: [
-        ...recentActivity[0].map(project => ({
-          id: project._id,
-          title: 'New Project Created',
-          description: project.name,
-          user: `${project.client?.firstName || 'Unknown'} ${project.client?.lastName || 'Client'}`,
-          time: project.createdAt,
-          icon: 'ProjectIcon',
-          iconBg: 'bg-blue-100',
-          iconColor: 'text-blue-600'
-        })),
-        ...recentActivity[1].map(task => ({
-          id: task._id,
-          title: 'Task Created',
-          description: task.title,
-          user: `${task.assignedTo?.firstName || 'Unknown'} ${task.assignedTo?.lastName || 'Employee'}`,
-          time: task.createdAt,
-          icon: 'TaskIcon',
-          iconBg: 'bg-purple-100',
-          iconColor: 'text-purple-600'
-        }))
-      ].sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 5),
-      systemAlerts: [
-        {
-          id: 1,
-          title: 'High Server Load',
-          description: 'Server CPU usage at 85%',
-          severity: 'Warning',
-          severityClass: 'bg-yellow-100 text-yellow-800',
-          severityBg: 'bg-yellow-100',
-          severityColor: 'text-yellow-600',
-          time: new Date(Date.now() - 60 * 60 * 1000)
-        },
-        {
-          id: 2,
-          title: 'Database Backup',
-          description: 'Daily backup completed successfully',
-          severity: 'Info',
-          severityClass: 'bg-blue-100 text-blue-800',
-          severityBg: 'bg-blue-100',
-          severityColor: 'text-blue-600',
-          time: new Date(Date.now() - 3 * 60 * 60 * 1000)
-        }
+    const recentActivity = await AuditLog.findVendorActivity(vendorId, 20)
+
+    // Get security alerts
+    const suspiciousSessions = await sessionService.getSuspiciousSessions(5)
+
+    // Get locked accounts
+    const lockedAccounts = await User.findLockedAccounts()
+
+    res.json({
+      success: true,
+      data: {
+        userStats,
+        sessionStats,
+        recentActivity: recentActivity.length,
+        suspiciousSessions: suspiciousSessions.length,
+        lockedAccounts: lockedAccounts.length,
+        timestamp: new Date()
+      }
+    })
+
+  } catch (error) {
+    console.error('Get admin dashboard error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// ==================== USER MANAGEMENT ====================
+
+// Get all users for admin
+router.get('/users', auth, employeeOrAdmin, async (req, res) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 20, 
+      role, 
+      search, 
+      status,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query
+
+    const query = { vendor: req.vendorId }
+
+    // Role-based filtering
+    if (role) {
+      query.role = role
+    }
+
+    // Status filtering
+    if (status) {
+      query.isActive = status === 'active'
+    }
+
+    // Search functionality
+    if (search) {
+      query.$or = [
+        { firstName: { $regex: search, $options: 'i' } },
+        { lastName: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { company: { $regex: search, $options: 'i' } }
       ]
     }
-    
-    res.json(analytics)
-  } catch (error) {
-    console.error('Get dashboard analytics error:', error)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
 
-/**
- * @swagger
- * /api/admin/clients/analytics:
- *   get:
- *     summary: Get client analytics
- *     description: Get comprehensive client analytics and management data
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Client analytics retrieved successfully
- */
-router.get('/clients/analytics', async (req, res) => {
-  try {
-    const clients = await User.find({ role: 'client' })
-      .select('-password -emailVerificationToken -passwordResetToken')
-      .sort({ createdAt: -1 })
-    
-    // Get client analytics
-    const totalClients = clients.length
-    const activeClients = clients.filter(client => client.isActive).length
-    const newClientsThisMonth = clients.filter(client => 
-      client.createdAt >= new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-    ).length
-    
-    // Mock revenue data (replace with actual billing integration)
-    const totalRevenue = 1250000
-    const revenueGrowth = 8.2
-    const avgSatisfaction = 4.6
-    const satisfactionResponses = 42
-    
-    // Get client projects and performance
-    const clientsWithData = await Promise.all(
-      clients.map(async (client) => {
-        const clientProjects = await Project.find({ client: client._id })
-        const activeProjects = clientProjects.filter(p => p.status === 'active' || p.status === 'in_progress').length
-        const totalRevenue = clientProjects.reduce((sum, p) => sum + (p.budget || 0), 0)
-        
-        return {
-          id: client._id,
-          name: `${client.firstName} ${client.lastName}`,
-          email: client.email,
-          phone: client.phone || '',
-          status: client.isActive ? 'active' : 'inactive',
-          activeProjects,
-          totalRevenue,
-          satisfaction: Math.floor(Math.random() * 2) + 4, // Mock satisfaction
-          lastActivity: client.lastActivity || client.createdAt,
-          initials: `${client.firstName?.[0] || ''}${client.lastName?.[0] || ''}`.toUpperCase()
+    // Super admin can see all users across vendors
+    if (req.user.role === 'super_admin' || req.user.isSuperAccount) {
+      delete query.vendor
+    }
+
+    const sortOptions = {}
+    sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1
+
+    const users = await User.find(query)
+      .select('-password')
+      .populate('vendor', 'name domain')
+      .sort(sortOptions)
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+
+    const total = await User.countDocuments(query)
+
+    res.json({
+      success: true,
+      data: {
+        users,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
         }
-      })
-    )
-    
-    const analytics = {
-      totalClients,
-      clientGrowth: newClientsThisMonth,
-      activeSubscriptions: activeClients,
-      subscriptionRate: totalClients > 0 ? Math.round((activeClients / totalClients) * 100) : 0,
-      totalRevenue,
-      revenueGrowth,
-      avgSatisfaction,
-      satisfactionResponses,
-      clients: clientsWithData
-    }
-    
-    res.json(analytics)
-  } catch (error) {
-    console.error('Get client analytics error:', error)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
-
-/**
- * @swagger
- * /api/admin/projects:
- *   get:
- *     summary: Get all projects
- *     description: Get all projects for admin view
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Projects retrieved successfully
- */
-router.get('/projects', async (req, res) => {
-  try {
-    const projects = await Project.find({})
-      .populate('client', 'firstName lastName email company')
-      .populate('projectManager', 'firstName lastName email')
-      .populate('team.user', 'firstName lastName email avatar')
-      .sort({ createdAt: -1 })
-    
-    res.json(projects)
-  } catch (error) {
-    console.error('Get admin projects error:', error)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
-
-/**
- * @swagger
- * /api/admin/sprints:
- *   get:
- *     summary: Get all sprints
- *     description: Get all sprints for admin view
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Sprints retrieved successfully
- */
-router.get('/sprints', async (req, res) => {
-  try {
-    const Sprint = require('../models/Sprint')
-    const sprints = await Sprint.find({})
-      .populate('project', 'name description status')
-      .populate('team.user', 'firstName lastName email avatar')
-      .sort({ startDate: -1 })
-    
-    res.json(sprints)
-  } catch (error) {
-    console.error('Get admin sprints error:', error)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
-
-/**
- * @swagger
- * /api/admin/projects/analytics:
- *   get:
- *     summary: Get project analytics
- *     description: Get comprehensive project analytics and management data
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Project analytics retrieved successfully
- */
-router.get('/projects/analytics', async (req, res) => {
-  try {
-    const projects = await Project.find().populate('client', 'firstName lastName')
-    
-    // Get project analytics
-    const activeProjects = projects.filter(p => p.status === 'active' || p.status === 'in_progress').length
-    const completedProjects = projects.filter(p => p.status === 'completed').length
-    const projectGrowth = 15.2
-    const avgDuration = 45
-    const totalRevenue = projects.reduce((sum, p) => sum + (p.budget || 0), 0)
-    const revenueGrowth = 12.5
-    
-    // Get project status distribution
-    const statusCounts = {
-      planning: projects.filter(p => p.status === 'planning').length,
-      active: projects.filter(p => p.status === 'active').length,
-      in_progress: projects.filter(p => p.status === 'in_progress').length,
-      review: projects.filter(p => p.status === 'review').length,
-      completed: completedProjects,
-      on_hold: projects.filter(p => p.status === 'on_hold').length
-    }
-    
-    const projectStatuses = [
-      { name: 'In Progress', count: statusCounts.active + statusCounts.in_progress, percentage: Math.round(((statusCounts.active + statusCounts.in_progress) / projects.length) * 100), color: 'bg-blue-500' },
-      { name: 'Planning', count: statusCounts.planning, percentage: Math.round((statusCounts.planning / projects.length) * 100), color: 'bg-yellow-500' },
-      { name: 'Review', count: statusCounts.review, percentage: Math.round((statusCounts.review / projects.length) * 100), color: 'bg-purple-500' },
-      { name: 'Completed', count: statusCounts.completed, percentage: Math.round((statusCounts.completed / projects.length) * 100), color: 'bg-green-500' },
-      { name: 'On Hold', count: statusCounts.on_hold, percentage: Math.round((statusCounts.on_hold / projects.length) * 100), color: 'bg-red-500' }
-    ]
-    
-    // Get top projects by progress
-    const topProjects = projects
-      .filter(p => p.status === 'active' || p.status === 'in_progress')
-      .map(p => ({
-        id: p._id,
-        name: p.name,
-        progress: p.progress || Math.floor(Math.random() * 40) + 60 // Mock progress
-      }))
-      .sort((a, b) => b.progress - a.progress)
-      .slice(0, 4)
-    
-    // Get team allocation
-    const employees = await User.find({ role: { $in: ['employee', 'senior', 'lead'] } })
-    const teamAllocation = employees.slice(0, 3).map(emp => ({
-      name: `${emp.firstName} ${emp.lastName}`,
-      role: emp.position || emp.role,
-      initials: `${emp.firstName?.[0] || ''}${emp.lastName?.[0] || ''}`.toUpperCase(),
-      projects: Math.floor(Math.random() * 3) + 1,
-      utilization: Math.floor(Math.random() * 20) + 70
-    }))
-    
-    // Get projects with details
-    const projectsWithDetails = projects.map(project => ({
-      id: project._id,
-      name: project.name,
-      description: project.description || '',
-      client: project.client ? `${project.client.firstName} ${project.client.lastName}` : 'Unknown',
-      status: project.status,
-      progress: project.progress || 0,
-      teamSize: Math.floor(Math.random() * 5) + 1,
-      budget: project.budget || 0,
-      deadline: project.deadline || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-    }))
-    
-    const analytics = {
-      activeProjects,
-      projectGrowth,
-      completedProjects,
-      avgDuration,
-      totalRevenue,
-      revenueGrowth,
-      projectStatuses,
-      topProjects,
-      teamAllocation,
-      projects: projectsWithDetails
-    }
-    
-    res.json(analytics)
-  } catch (error) {
-    console.error('Get project analytics error:', error)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
-
-/**
- * @swagger
- * /api/admin/analytics/business:
- *   get:
- *     summary: Get business analytics
- *     description: Get comprehensive business analytics for strategic decision making
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Business analytics retrieved successfully
- */
-router.get('/analytics/business', async (req, res) => {
-  try {
-    const now = new Date()
-    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    
-    // Get user counts
-    const [totalClients, newClients, totalEmployees] = await Promise.all([
-      User.find({ role: 'client' }).countDocuments(),
-      User.find({ 
-        role: 'client', 
-        createdAt: { $gte: lastMonth } 
-      }).countDocuments(),
-      User.find({ role: { $in: ['employee', 'senior', 'lead'] } }).countDocuments()
-    ])
-    
-    // Mock business metrics (replace with actual data)
-    const metrics = {
-      totalRevenue: 1250000,
-      revenueGrowth: 12.5,
-      newClients,
-      clientGrowth: totalClients > 0 ? Math.round((newClients / totalClients) * 100) : 0,
-      conversionRate: 23.5,
-      conversionGrowth: 5.1,
-      satisfaction: 4.6,
-      satisfactionGrowth: 2.3
-    }
-    
-    // Get project performance metrics
-    const projects = await Project.find()
-    const projectMetrics = [
-      { name: 'On Time Delivery', percentage: 87 },
-      { name: 'Budget Adherence', percentage: 92 },
-      { name: 'Quality Score', percentage: 94 },
-      { name: 'Client Satisfaction', percentage: 89 }
-    ]
-    
-    // Get team performance
-    const employees = await User.find({ role: { $in: ['employee', 'senior', 'lead'] } })
-    const teamPerformance = await Promise.all(
-      employees.slice(0, 4).map(async (emp) => {
-        const empTasks = await Task.find({ assignedTo: emp._id })
-        const completedTasks = empTasks.filter(t => t.status === 'done').length
-        const efficiency = empTasks.length > 0 ? Math.round((completedTasks / empTasks.length) * 100) : 0
-        
-        return {
-          id: emp._id,
-          name: `${emp.firstName} ${emp.lastName}`,
-          role: emp.position || emp.role,
-          initials: `${emp.firstName?.[0] || ''}${emp.lastName?.[0] || ''}`.toUpperCase(),
-          efficiency,
-          completedTasks
-        }
-      })
-    )
-    
-    // Get service performance
-    const servicePerformance = [
-      { name: 'Web Development', projects: 12, revenue: 450000, growth: 15.2 },
-      { name: 'Mobile Development', projects: 8, revenue: 320000, growth: 8.7 },
-      { name: 'UI/UX Design', projects: 15, revenue: 280000, growth: 12.3 },
-      { name: 'Consulting', projects: 6, revenue: 200000, growth: 5.8 }
-    ]
-    
-    // Get top clients
-    const topClients = await Promise.all(
-      (await User.find({ role: 'client' }).limit(4)).map(async (client) => {
-        const clientProjects = await Project.find({ client: client._id })
-        const revenue = clientProjects.reduce((sum, p) => sum + (p.budget || 0), 0)
-        
-        return {
-          id: client._id,
-          name: `${client.firstName} ${client.lastName}`,
-          initials: `${client.firstName?.[0] || ''}${client.lastName?.[0] || ''}`.toUpperCase(),
-          revenue,
-          growth: Math.floor(Math.random() * 30) - 5 // Random growth between -5 and 25
-        }
-      })
-    )
-    
-    // Get revenue by service
-    const revenueByService = [
-      { name: 'Web Development', revenue: 450000, percentage: 36, color: 'bg-blue-500' },
-      { name: 'Mobile Development', revenue: 320000, percentage: 25.6, color: 'bg-green-500' },
-      { name: 'UI/UX Design', revenue: 280000, percentage: 22.4, color: 'bg-purple-500' },
-      { name: 'Consulting', revenue: 200000, percentage: 16, color: 'bg-yellow-500' }
-    ]
-    
-    const analytics = {
-      metrics,
-      projectMetrics,
-      teamPerformance,
-      servicePerformance,
-      topClients,
-      revenueByService
-    }
-    
-    res.json(analytics)
-  } catch (error) {
-    console.error('Get business analytics error:', error)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
-
-/**
- * @swagger
- * /api/admin/tasks/assign:
- *   post:
- *     summary: Assign task to employee
- *     description: Assign a specific task to an employee
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - taskId
- *               - employeeId
- *             properties:
- *               taskId:
- *                 type: string
- *               employeeId:
- *                 type: string
- *     responses:
- *       200:
- *         description: Task assigned successfully
- *       400:
- *         description: Validation error
- *       404:
- *         description: Task or employee not found
- */
-router.post('/tasks/assign', 
-  [
-    body('taskId').isMongoId().withMessage('Valid task ID is required'),
-    body('employeeId').isMongoId().withMessage('Valid employee ID is required')
-  ],
-  validateRequest,
-  async (req, res) => {
-    try {
-      const { taskId, employeeId } = req.body
-      
-      // Check if task exists
-      const task = await Task.findById(taskId)
-      if (!task) {
-        return res.status(404).json({ message: 'Task not found' })
       }
+    })
+
+  } catch (error) {
+    console.error('Get admin users error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// Bulk user operations
+router.post('/users/bulk', auth, hasPermission('manage_users'), async (req, res) => {
+  try {
+    const { action, userIds, data } = req.body
+
+    if (!action || !userIds || !Array.isArray(userIds)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Action and user IDs are required.'
+      })
+    }
+
+    const query = { 
+      _id: { $in: userIds },
+      vendor: req.vendorId 
+    }
+
+    // Super admin can operate on any vendor
+    if (req.user.role === 'super_admin' || req.user.isSuperAccount) {
+      delete query.vendor
+    }
+
+    let result
+
+    switch (action) {
+      case 'activate':
+        result = await User.updateMany(query, { isActive: true })
+        break
       
-      // Check if employee exists and is an employee
-      const employee = await User.findById(employeeId)
-      if (!employee || !['employee', 'senior', 'lead'].includes(employee.role)) {
-        return res.status(404).json({ message: 'Employee not found' })
+      case 'deactivate':
+        result = await User.updateMany(query, { isActive: false })
+        break
+      
+      case 'delete':
+        // Soft delete - deactivate users
+        result = await User.updateMany(query, { isActive: false })
+        break
+      
+      case 'changeRole':
+        if (!data.role) {
+          return res.status(400).json({
+            success: false,
+            message: 'Role is required for role change action.'
+          })
+        }
+        result = await User.updateMany(query, { role: data.role })
+        break
+      
+      default:
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid action.'
+        })
+    }
+
+    // Log bulk operation
+    await authService.logAuthEvent({
+      event: 'admin.bulk_operation',
+      userId: req.user._id,
+      vendorId: req.vendorId,
+      portalType: req.portalType,
+      request: {
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+        method: req.method,
+        url: req.originalUrl
+      },
+      metadata: {
+        action,
+        affectedUsers: userIds.length,
+        success: true
       }
+    })
+
+    res.json({
+      success: true,
+      message: `Bulk operation '${action}' completed successfully.`,
+      data: {
+        modifiedCount: result.modifiedCount
+      }
+    })
+
+  } catch (error) {
+    console.error('Bulk user operation error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// ==================== SESSION MANAGEMENT ====================
+
+// Get all active sessions
+router.get('/sessions', auth, employeeOrAdmin, async (req, res) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 20, 
+      portalType, 
+      deviceType,
+      suspiciousOnly = false
+    } = req.query
+
+    const query = { 
+      vendor: req.vendorId,
+      isActive: true 
+    }
+
+    if (portalType) {
+      query.portalType = portalType
+    }
+
+    if (deviceType) {
+      query['deviceInfo.deviceType'] = deviceType
+    }
+
+    if (suspiciousOnly === 'true') {
+      query['security.suspiciousActivity'] = true
+    }
+
+    // Super admin can see all sessions
+    if (req.user.role === 'super_admin' || req.user.isSuperAccount) {
+      delete query.vendor
+    }
+
+    const sessions = await Session.find(query)
+      .populate('user', 'firstName lastName email')
+      .populate('vendor', 'name domain')
+      .sort({ lastActivity: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+
+    const total = await Session.countDocuments(query)
+
+    res.json({
+      success: true,
+      data: {
+        sessions: sessions.map(session => ({
+          id: session.sessionId,
+          user: session.user,
+          vendor: session.vendor,
+          portalType: session.portalType,
+          deviceInfo: session.deviceInfo,
+          lastActivity: session.lastActivity,
+          loginTime: session.loginTime,
+          riskScore: session.security.riskScore,
+          suspiciousActivity: session.security.suspiciousActivity
+        })),
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    })
+
+  } catch (error) {
+    console.error('Get admin sessions error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// Force logout multiple sessions
+router.post('/sessions/bulk-logout', auth, hasPermission('manage_users'), async (req, res) => {
+  try {
+    const { sessionIds, reason = 'Admin action' } = req.body
+
+    if (!sessionIds || !Array.isArray(sessionIds)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Session IDs are required.'
+      })
+    }
+
+    const query = { 
+      sessionId: { $in: sessionIds },
+      vendor: req.vendorId 
+    }
+
+    // Super admin can operate on any vendor
+    if (req.user.role === 'super_admin' || req.user.isSuperAccount) {
+      delete query.vendor
+    }
+
+    const sessions = await Session.find(query)
+    
+    for (const session of sessions) {
+      await session.blacklist()
       
-      // Update task assignment
-      task.assignedTo = employeeId
-      task.assignedAt = new Date()
-      task.status = 'todo' // Reset to todo when assigned
-      await task.save()
-      
-      res.json({
-        success: true,
-        message: `Task "${task.title}" assigned to ${employee.firstName} ${employee.lastName}`,
-        task: {
-          id: task._id,
-          title: task.title,
-          assignedTo: {
-            id: employee._id,
-            name: `${employee.firstName} ${employee.lastName}`,
-            email: employee.email
+      // Log session termination
+      await authService.logAuthEvent({
+        event: 'user.session.destroy',
+        userId: req.user._id,
+        vendorId: req.vendorId,
+        portalType: req.portalType,
+        sessionId: session.sessionId,
+        request: {
+          ipAddress: req.ip,
+          userAgent: req.get('User-Agent'),
+          method: req.method,
+          url: req.originalUrl
+        },
+        metadata: {
+          reason,
+          success: true
+        }
+      })
+    }
+
+    res.json({
+      success: true,
+      message: `Terminated ${sessions.length} sessions.`,
+      data: {
+        terminatedCount: sessions.length
+      }
+    })
+
+  } catch (error) {
+    console.error('Bulk session logout error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// ==================== SECURITY MANAGEMENT ====================
+
+// Get security overview
+router.get('/security', auth, authorize(['admin', 'super_admin']), async (req, res) => {
+  try {
+    const vendorId = req.vendorId
+
+    // Get security statistics
+    const securityStats = await AuditLog.getSecurityStats(24 * 60 * 60 * 1000) // Last 24 hours
+
+    // Get suspicious activities
+    const suspiciousActivities = await AuditLog.findSuspiciousActivities()
+
+    // Get locked accounts
+    const lockedAccounts = await User.findLockedAccounts()
+
+    // Get users with expired passwords
+    const expiredPasswords = await User.findExpiredPasswords()
+
+    // Get session health
+    const sessionHealth = await sessionService.monitorSessionHealth()
+
+    res.json({
+      success: true,
+      data: {
+        securityStats,
+        suspiciousActivities: suspiciousActivities.length,
+        lockedAccounts: lockedAccounts.length,
+        expiredPasswords: expiredPasswords.length,
+        sessionHealth,
+        timestamp: new Date()
+      }
+    })
+
+  } catch (error) {
+    console.error('Get security overview error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// Get suspicious activities
+router.get('/security/suspicious', auth, employeeOrAdmin, async (req, res) => {
+  try {
+    const { limit = 50 } = req.query
+
+    const suspiciousActivities = await AuditLog.findSuspiciousActivities()
+      .limit(parseInt(limit))
+      .populate('userId', 'firstName lastName email')
+      .populate('vendorId', 'name domain')
+
+    res.json({
+      success: true,
+      data: {
+        suspiciousActivities
+      }
+    })
+
+  } catch (error) {
+    console.error('Get suspicious activities error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// Unlock all accounts
+router.post('/security/unlock-all', auth, hasPermission('manage_users'), async (req, res) => {
+  try {
+    const query = { 
+      'security.accountLockedUntil': { $gt: new Date() },
+      vendor: req.vendorId 
+    }
+
+    // Super admin can unlock any vendor
+    if (req.user.role === 'super_admin' || req.user.isSuperAccount) {
+      delete query.vendor
+    }
+
+    const result = await User.updateMany(query, {
+      'security.accountLockedUntil': null,
+      'security.failedAttempts': 0
+    })
+
+    // Log bulk unlock
+    await authService.logAuthEvent({
+      event: 'security.account.unlocked',
+      userId: req.user._id,
+      vendorId: req.vendorId,
+      portalType: req.portalType,
+      request: {
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+        method: req.method,
+        url: req.originalUrl
+      },
+      metadata: {
+        unlockedCount: result.modifiedCount,
+        success: true
+      }
+    })
+
+    res.json({
+      success: true,
+      message: `Unlocked ${result.modifiedCount} accounts.`,
+      data: {
+        unlockedCount: result.modifiedCount
+      }
+    })
+
+  } catch (error) {
+    console.error('Unlock all accounts error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// ==================== ANALYTICS ====================
+
+// Get user analytics
+router.get('/analytics/users', auth, employeeOrAdmin, async (req, res) => {
+  try {
+    const { timeWindow = '30d' } = req.query
+    const vendorId = req.vendorId
+
+    // Convert time window to milliseconds
+    const timeWindowMs = {
+      '1d': 24 * 60 * 60 * 1000,
+      '7d': 7 * 24 * 60 * 60 * 1000,
+      '30d': 30 * 24 * 60 * 60 * 1000,
+      '90d': 90 * 24 * 60 * 60 * 1000
+    }[timeWindow] || 30 * 24 * 60 * 60 * 1000
+
+    const cutoffDate = new Date(Date.now() - timeWindowMs)
+
+    // User registration trends
+    const registrationTrends = await User.aggregate([
+      { $match: { vendor: vendorId, createdAt: { $gte: cutoffDate } } },
+      {
+        $group: {
+          _id: {
+            date: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+            role: '$role'
           },
-          assignedAt: task.assignedAt
+          count: { $sum: 1 }
         }
-      })
-    } catch (error) {
-      console.error('Assign task error:', error)
-      res.status(500).json({ message: 'Internal server error' })
-    }
-  }
-)
+      },
+      { $sort: { '_id.date': 1 } }
+    ])
 
-/**
- * @swagger
- * /api/admin/tasks/unassign:
- *   post:
- *     summary: Unassign task from employee
- *     description: Remove task assignment from an employee
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - taskId
- *             properties:
- *               taskId:
- *                 type: string
- *     responses:
- *       200:
- *         description: Task unassigned successfully
- *       404:
- *         description: Task not found
- */
-router.post('/tasks/unassign', 
-  [
-    body('taskId').isMongoId().withMessage('Valid task ID is required')
-  ],
-  validateRequest,
-  async (req, res) => {
-    try {
-      const { taskId } = req.body
-      
-      // Check if task exists
-      const task = await Task.findById(taskId)
-      if (!task) {
-        return res.status(404).json({ message: 'Task not found' })
-      }
-      
-      // Remove assignment
-      task.assignedTo = null
-      task.assignedAt = null
-      task.status = 'todo' // Reset to todo when unassigned
-      await task.save()
-      
-      res.json({
-        success: true,
-        message: `Task "${task.title}" unassigned successfully`,
-        task: {
-          id: task._id,
-          title: task.title,
-          assignedTo: null,
-          assignedAt: null
+    // Role distribution
+    const roleDistribution = await User.aggregate([
+      { $match: { vendor: vendorId } },
+      {
+        $group: {
+          _id: '$role',
+          count: { $sum: 1 },
+          activeCount: { $sum: { $cond: ['$isActive', 1, 0] } }
         }
-      })
-    } catch (error) {
-      console.error('Unassign task error:', error)
-      res.status(500).json({ message: 'Internal server error' })
-    }
-  }
-)
+      }
+    ])
 
-/**
- * @swagger
- * /api/admin/tasks/bulk-assign:
- *   post:
- *     summary: Bulk assign tasks to employee
- *     description: Assign multiple tasks to an employee at once
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - taskIds
- *               - employeeId
- *             properties:
- *               taskIds:
- *                 type: array
- *                 items:
- *                   type: string
- *               employeeId:
- *                 type: string
- *     responses:
- *       200:
- *         description: Tasks assigned successfully
- *       400:
- *         description: Validation error
- */
-router.post('/tasks/bulk-assign', 
-  [
-    body('taskIds').isArray({ min: 1 }).withMessage('At least one task ID is required'),
-    body('taskIds.*').isMongoId().withMessage('Valid task IDs are required'),
-    body('employeeId').isMongoId().withMessage('Valid employee ID is required')
-  ],
-  validateRequest,
-  async (req, res) => {
-    try {
-      const { taskIds, employeeId } = req.body
-      
-      // Check if employee exists and is an employee
-      const employee = await User.findById(employeeId)
-      if (!employee || !['employee', 'senior', 'lead'].includes(employee.role)) {
-        return res.status(404).json({ message: 'Employee not found' })
-      }
-      
-      // Update all tasks
-      const updateResult = await Task.updateMany(
-        { _id: { $in: taskIds } },
-        { 
-          assignedTo: employeeId,
-          assignedAt: new Date(),
-          status: 'todo'
+    // Login activity
+    const loginActivity = await AuditLog.aggregate([
+      { 
+        $match: { 
+          vendorId: vendorId,
+          event: { $in: ['user.login.success', 'user.login.failed'] },
+          timestamp: { $gte: cutoffDate }
+        } 
+      },
+      {
+        $group: {
+          _id: {
+            date: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
+            event: '$event'
+          },
+          count: { $sum: 1 }
         }
-      )
-      
-      if (updateResult.matchedCount === 0) {
-        return res.status(404).json({ message: 'No tasks found' })
-      }
-      
-      res.json({
-        success: true,
-        message: `${updateResult.modifiedCount} tasks assigned to ${employee.firstName} ${employee.lastName}`,
-        assignedCount: updateResult.modifiedCount,
-        employee: {
-          id: employee._id,
-          name: `${employee.firstName} ${employee.lastName}`,
-          email: employee.email
-        }
-      })
-    } catch (error) {
-      console.error('Bulk assign tasks error:', error)
-      res.status(500).json({ message: 'Internal server error' })
-    }
-  }
-)
+      },
+      { $sort: { '_id.date': 1 } }
+    ])
 
-/**
- * @swagger
- * /api/admin/tasks/assignments:
- *   get:
- *     summary: Get task assignments
- *     description: Get all task assignments with employee and task details
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Task assignments retrieved successfully
- */
-router.get('/tasks/assignments', async (req, res) => {
-  try {
-    const assignments = await Task.find({ assignedTo: { $exists: true, $ne: null } })
-      .populate('assignedTo', 'firstName lastName email role position')
-      .populate('project', 'name')
-      .populate('sprint', 'name')
-      .sort({ assignedAt: -1 })
-    
-    const assignmentsData = assignments.map(task => ({
-      id: task._id,
-      title: task.title,
-      description: task.description,
-      status: task.status,
-      priority: task.priority,
-      assignedTo: task.assignedTo ? {
-        id: task.assignedTo._id,
-        name: `${task.assignedTo.firstName} ${task.assignedTo.lastName}`,
-        email: task.assignedTo.email,
-        role: task.assignedTo.role,
-        position: task.assignedTo.position
-      } : null,
-      assignedAt: task.assignedAt,
-      project: task.project ? {
-        id: task.project._id,
-        name: task.project.name
-      } : null,
-      sprint: task.sprint ? {
-        id: task.sprint._id,
-        name: task.sprint.name
-      } : null,
-      dueDate: task.dueDate,
-      estimatedHours: task.estimatedHours
-    }))
-    
-    res.json(assignmentsData)
+    res.json({
+      success: true,
+      data: {
+        registrationTrends,
+        roleDistribution,
+        loginActivity,
+        timeWindow
+      }
+    })
+
   } catch (error) {
-    console.error('Get task assignments error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    console.error('Get user analytics error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// Get session analytics
+router.get('/analytics/sessions', auth, employeeOrAdmin, async (req, res) => {
+  try {
+    const { timeWindow = '24h' } = req.query
+    const vendorId = req.vendorId
+
+    const sessionAnalytics = await sessionService.getSessionAnalytics(
+      timeWindow === '24h' ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000
+    )
+
+    res.json({
+      success: true,
+      data: {
+        sessionAnalytics,
+        timeWindow
+      }
+    })
+
+  } catch (error) {
+    console.error('Get session analytics error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// ==================== SYSTEM MAINTENANCE ====================
+
+// Run system maintenance tasks
+router.post('/maintenance', auth, superAdminOnly, async (req, res) => {
+  try {
+    const { tasks } = req.body
+
+    if (!tasks || !Array.isArray(tasks)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tasks array is required.'
+      })
+    }
+
+    const results = {}
+
+    for (const task of tasks) {
+      try {
+        switch (task) {
+          case 'session-cleanup':
+            results[task] = await sessionService.cleanupExpiredSessions()
+            break
+          
+          case 'audit-log-cleanup':
+            results[task] = await AuditLog.cleanupOldLogs(90)
+            break
+          
+          case 'password-expiration-check':
+            results[task] = await User.findExpiredPasswords()
+            break
+          
+          case 'account-lockout-cleanup':
+            const now = new Date()
+            const lockedUsers = await User.find({
+              'security.accountLockedUntil': { $lt: now }
+            })
+            for (const user of lockedUsers) {
+              user.security.accountLockedUntil = null
+              user.security.failedAttempts = 0
+              await user.save()
+            }
+            results[task] = lockedUsers.length
+            break
+          
+          case 'session-health-monitoring':
+            results[task] = await sessionService.monitorSessionHealth()
+            break
+          
+          default:
+            results[task] = { error: 'Unknown task' }
+        }
+      } catch (error) {
+        results[task] = { error: error.message }
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Maintenance tasks completed.',
+      data: {
+        results
+      }
+    })
+
+  } catch (error) {
+    console.error('System maintenance error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// Get system status
+router.get('/status', auth, employeeOrAdmin, async (req, res) => {
+  try {
+    const vendorId = req.vendorId
+
+    // Get various system metrics
+    const userCount = await User.countDocuments({ vendor: vendorId })
+    const activeUserCount = await User.countDocuments({ vendor: vendorId, isActive: true })
+    const sessionCount = await Session.countDocuments({ vendor: vendorId, isActive: true })
+    const lockedAccountCount = await User.countDocuments({ 
+      vendor: vendorId,
+      'security.accountLockedUntil': { $gt: new Date() }
+    })
+
+    // Get recent audit logs
+    const recentLogs = await AuditLog.findVendorActivity(vendorId, 10)
+
+    // Get session health
+    const sessionHealth = await sessionService.monitorSessionHealth()
+
+    res.json({
+      success: true,
+      data: {
+        metrics: {
+          totalUsers: userCount,
+          activeUsers: activeUserCount,
+          activeSessions: sessionCount,
+          lockedAccounts: lockedAccountCount
+        },
+        recentActivity: recentLogs.length,
+        sessionHealth,
+        timestamp: new Date()
+      }
+    })
+
+  } catch (error) {
+    console.error('Get system status error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
   }
 })
 
