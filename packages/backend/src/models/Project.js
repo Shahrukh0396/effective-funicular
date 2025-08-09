@@ -383,13 +383,14 @@ projectSchema.virtual('actualDuration').get(function() {
 
 // Virtual for budget variance
 projectSchema.virtual('budgetVariance').get(function() {
-  return this.budget.actual - this.budget.estimated
+  if (!this.budget) return 0
+  return (this.budget.actual || 0) - (this.budget.estimated || 0)
 })
 
 // Virtual for budget variance percentage
 projectSchema.virtual('budgetVariancePercentage').get(function() {
-  if (this.budget.estimated === 0) return 0
-  return ((this.budget.actual - this.budget.estimated) / this.budget.estimated) * 100
+  if (!this.budget || this.budget.estimated === 0) return 0
+  return (((this.budget.actual || 0) - (this.budget.estimated || 0)) / this.budget.estimated) * 100
 })
 
 // Virtual for overdue status
@@ -400,17 +401,17 @@ projectSchema.virtual('isOverdue').get(function() {
 
 // Virtual for team size
 projectSchema.virtual('teamSize').get(function() {
-  return this.team.members.length
+  return this.team?.members?.length || 0
 })
 
 // Virtual for completed milestones
 projectSchema.virtual('completedMilestones').get(function() {
-  return this.milestones.filter(m => m.status === 'completed').length
+  return this.milestones?.filter(m => m.status === 'completed')?.length || 0
 })
 
 // Virtual for total milestones
 projectSchema.virtual('totalMilestones').get(function() {
-  return this.milestones.length
+  return this.milestones?.length || 0
 })
 
 // Indexes for performance
@@ -431,27 +432,27 @@ projectSchema.pre('save', function(next) {
 
 // Instance method to check if user is team member
 projectSchema.methods.isTeamMember = function(userId) {
-  return this.team.members.some(member => 
+  return this.team?.members?.some(member => 
     member.user.toString() === userId.toString()
-  )
+  ) || false
 }
 
 // Instance method to check if user is stakeholder
 projectSchema.methods.isStakeholder = function(userId) {
-  return this.team.stakeholders.some(stakeholder => 
+  return this.team?.stakeholders?.some(stakeholder => 
     stakeholder.user.toString() === userId.toString()
-  )
+  ) || false
 }
 
 // Instance method to check if user can access project
 projectSchema.methods.canUserAccess = function(userId, userRole) {
   // Super admin and marketing admin can access all projects
-  if (userRole === 'super_admin' || userRole === 'marketing_admin') {
+  if (userRole === 'super_admin' || userRole === 'vendor_admin') {
     return true
   }
   
   // Project manager can always access
-  if (this.team.projectManager.toString() === userId.toString()) {
+  if (this.team?.projectManager?.toString() === userId.toString()) {
     return true
   }
   
@@ -475,6 +476,14 @@ projectSchema.methods.canUserAccess = function(userId, userRole) {
 
 // Instance method to add team member
 projectSchema.methods.addTeamMember = function(userId, role, hourlyRate = 0) {
+  // Ensure team structure exists
+  if (!this.team) {
+    this.team = { members: [], stakeholders: [] }
+  }
+  if (!this.team.members) {
+    this.team.members = []
+  }
+  
   const existingMember = this.team.members.find(member => 
     member.user.toString() === userId.toString()
   )
@@ -495,6 +504,10 @@ projectSchema.methods.addTeamMember = function(userId, role, hourlyRate = 0) {
 
 // Instance method to remove team member
 projectSchema.methods.removeTeamMember = function(userId) {
+  if (!this.team?.members) {
+    return this.save()
+  }
+  
   this.team.members = this.team.members.filter(member => 
     member.user.toString() !== userId.toString()
   )
@@ -504,6 +517,10 @@ projectSchema.methods.removeTeamMember = function(userId) {
 
 // Instance method to add milestone
 projectSchema.methods.addMilestone = function(milestoneData) {
+  if (!this.milestones) {
+    this.milestones = []
+  }
+  
   this.milestones.push({
     ...milestoneData,
     status: 'pending'
@@ -514,10 +531,17 @@ projectSchema.methods.addMilestone = function(milestoneData) {
 
 // Instance method to update progress
 projectSchema.methods.updateProgress = function(progress) {
+  if (!this.progress) {
+    this.progress = { overall: 0 }
+  }
+  
   this.progress.overall = Math.max(0, Math.min(100, progress))
   
   if (this.progress.overall === 100 && this.status === 'active') {
     this.status = 'completed'
+    if (!this.timeline) {
+      this.timeline = {}
+    }
     this.timeline.actualEndDate = new Date()
   }
   

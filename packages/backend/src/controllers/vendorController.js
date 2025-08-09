@@ -187,9 +187,9 @@ const deleteVendor = async (req, res) => {
 
     // Check if vendor has associated data
     const [userCount, projectCount, taskCount] = await Promise.all([
-      User.countDocuments({ vendor: vendor._id }),
-      Project.countDocuments({ vendor: vendor._id }),
-      Task.countDocuments({ vendor: vendor._id })
+      User.countDocuments({ vendorId: vendor._id }),
+      Project.countDocuments({ vendorId: vendor._id }),
+      Task.countDocuments({ vendorId: vendor._id })
     ])
 
     if (userCount > 0 || projectCount > 0 || taskCount > 0) {
@@ -226,11 +226,11 @@ const getVendorStats = async (req, res) => {
     }
 
     const [userCount, projectCount, taskCount, activeProjects] = await Promise.all([
-      User.countDocuments({ vendor: vendor._id }),
-      Project.countDocuments({ vendor: vendor._id }),
-      Task.countDocuments({ vendor: vendor._id }),
+      User.countDocuments({ vendorId: vendor._id }),
+      Project.countDocuments({ vendorId: vendor._id }),
+      Task.countDocuments({ vendorId: vendor._id }),
       Project.countDocuments({ 
-        vendor: vendor._id, 
+        vendorId: vendor._id, 
         status: { $in: ['active', 'in_progress'] } 
       })
     ])

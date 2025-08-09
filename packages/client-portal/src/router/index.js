@@ -70,6 +70,11 @@ const routes = [
         component: () => import('@/views/dashboard/ProjectDetailsView.vue')
       },
       {
+        path: 'projects/:id/kanban',
+        name: 'project-kanban',
+        component: () => import('@/views/dashboard/ProjectKanbanView.vue')
+      },
+      {
         path: 'notifications',
         name: 'notifications',
         component: () => import('@/views/dashboard/NotificationsView.vue')
@@ -99,6 +104,11 @@ const routes = [
         path: 'sprints',
         name: 'sprints',
         component: () => import('@/views/dashboard/SprintsView.vue')
+      },
+      {
+        path: 'kanban',
+        name: 'kanban',
+        component: () => import('@/views/dashboard/KanbanView.vue')
       }
     ]
   }

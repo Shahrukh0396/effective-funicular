@@ -496,7 +496,7 @@ const fetchEmployees = async () => {
   loading.value = true
   try {
     const response = await axios.get('/api/admin/employees')
-    employees.value = response.data.map(emp => ({
+    employees.value = response.data.data.employees.map(emp => ({
       ...emp,
       attendanceStatus: emp.attendanceStatus || 'not_checked_in',
       hoursToday: emp.hoursToday || 0,

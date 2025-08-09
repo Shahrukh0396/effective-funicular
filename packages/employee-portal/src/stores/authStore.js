@@ -25,14 +25,27 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await axios.post('/api/auth/login', { 
+      const response = await axios.post('/api/employee/login', { 
         email, 
-        password,
-        portalType: 'employee'
+        password
       })
-      const { accessToken, user: userData } = response.data.data
+      
+      console.log('🔐 Auth Store: Full response data:', response.data)
+      
+      const { token: accessToken, user: userData } = response.data
+      
+      console.log('🔐 Auth Store: Destructured accessToken:', accessToken)
+      console.log('🔐 Auth Store: Destructured userData:', userData)
+      
       user.value = userData
       setToken(accessToken)
+      
+      // Force update the isAuthenticated computed property
+      console.log('🔐 Auth Store: Login successful, token set:', !!accessToken)
+      console.log('🔐 Auth Store: User set:', userData.email)
+      console.log('🔐 Auth Store: isAuthenticated should be:', !!accessToken)
+      console.log('🔐 Auth Store: Token stored in localStorage:', !!localStorage.getItem('employee_token'))
+      
       return true
     } catch (err) {
       error.value = err.response?.data?.message || 'Failed to login'
@@ -71,6 +84,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const getAuthHeaders = () => {
+    console.log('🔍 Auth Store - Token value:', token.value ? 'Present' : 'Missing')
+    console.log('🔍 Auth Store - Token length:', token.value?.length || 0)
     return {
       'Authorization': `Bearer ${token.value}`,
       'Content-Type': 'application/json'

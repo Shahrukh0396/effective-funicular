@@ -19,8 +19,12 @@ const createRateLimiter = (windowMs = 15 * 60 * 1000, max = 100) => {
 }
 
 // Specific rate limiters
-const authLimiter = createRateLimiter(15 * 60 * 1000, 5) // 5 attempts per 15 minutes
-const generalLimiter = process.env.NODE_ENV === 'test' ? (req, res, next) => next() : createRateLimiter(15 * 60 * 1000, 100) // 100 requests per 15 minutes
+const authLimiter = process.env.NODE_ENV === 'development' ? 
+  createRateLimiter(15 * 60 * 1000, 100) : // 100 attempts per 15 minutes for development
+  createRateLimiter(15 * 60 * 1000, 5) // 5 attempts per 15 minutes for production
+const generalLimiter = process.env.NODE_ENV === 'test' ? (req, res, next) => next() : 
+                      process.env.NODE_ENV === 'development' ? createRateLimiter(15 * 60 * 1000, 500) : 
+                      createRateLimiter(15 * 60 * 1000, 100) // More lenient for development
 const uploadLimiter = createRateLimiter(60 * 60 * 1000, 10) // 10 uploads per hour
 
 // Input validation middleware

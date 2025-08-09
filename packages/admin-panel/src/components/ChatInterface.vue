@@ -87,60 +87,43 @@
         </div>
 
         <div v-else class="messages-list">
-          <div 
+          <MessageItem
             v-for="message in messages" 
             :key="message._id"
-            class="message-item"
-            :class="{ 'own-message': message.sender._id === currentUser._id }"
-          >
-            <div class="message-avatar" v-if="message.sender._id !== currentUser._id">
-              <div class="avatar-circle small">
-                {{ getInitials(message.sender.firstName, message.sender.lastName) }}
-              </div>
-            </div>
-            
-            <div class="message-content">
-              <div class="message-header">
-                <span class="message-sender">{{ message.sender.firstName }} {{ message.sender.lastName }}</span>
-                <span class="message-time">{{ formatTime(message.createdAt) }}</span>
-              </div>
-              
-              <div class="message-text">
-                <p v-if="message.content">{{ message.content }}</p>
-                
-                <!-- File Attachments -->
-                <div v-if="message.attachments && message.attachments.length > 0" class="message-attachments">
-                  <div 
-                    v-for="attachment in message.attachments" 
-                    :key="attachment.filename"
-                    class="attachment-item"
-                  >
-                    <div class="attachment-icon">
-                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path>
-                      </svg>
-                    </div>
-                    <div class="attachment-info">
-                      <span class="attachment-name">{{ attachment.originalName }}</span>
-                      <span class="attachment-size">{{ formatFileSize(attachment.size) }}</span>
-                    </div>
-                    <a :href="attachment.url" target="_blank" class="attachment-download">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                      </svg>
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+            :message="message"
+            :currentUser="currentUser"
+            @reply="replyToMessage"
+            @edit="editMessage"
+            @delete="deleteMessage"
+            @reaction-toggle="toggleReaction"
+            @copy-link="copyMessageLink"
+          />
         </div>
       </div>
 
       <!-- Message Input -->
       <div class="message-input-container">
         <div class="input-actions">
-          <button @click="showFileUpload = true" class="action-btn">
+          <div class="emoji-button-container">
+            <button 
+              @click="showEmojiPicker = !showEmojiPicker"
+              class="action-btn"
+              :class="{ 'active': showEmojiPicker }"
+              title="Add emoji"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+            </button>
+            
+            <ReactionPicker
+              v-if="showEmojiPicker"
+              @emoji-select="insertEmoji"
+              @close="showEmojiPicker = false"
+            />
+          </div>
+          
+          <button @click="showFileUpload = true" class="action-btn" title="Attach file">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path>
             </svg>
@@ -160,10 +143,14 @@
         
         <button 
           @click="sendMessage"
-          :disabled="!newMessage.trim()"
+          :disabled="!newMessage.trim() || uploadingFiles"
           class="send-btn"
         >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg v-if="uploadingFiles" class="animate-spin w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
           </svg>
         </button>
@@ -213,7 +200,7 @@
             <select v-model="newConversation.participantId" class="form-select">
               <option value="">Choose a user...</option>
               <option v-for="user in availableUsers" :key="user._id" :value="user._id">
-                {{ user.firstName }} {{ user.lastName }} ({{ user.email }})
+                {{ getUserDisplayName(user) }} ({{ user.email }})
               </option>
             </select>
           </div>
@@ -228,7 +215,7 @@
             <div class="participants-list">
               <label v-for="user in availableUsers" :key="user._id" class="participant-item">
                 <input type="checkbox" :value="user._id" v-model="newConversation.participantIds">
-                <span>{{ user.firstName }} {{ user.lastName }}</span>
+                <span>{{ getUserDisplayName(user) }}</span>
               </label>
             </div>
           </div>
@@ -296,11 +283,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
-import { useAuthStore } from '../stores/authStore'
+import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { useWebSocketAuthStore } from '../stores/websocketAuthStore'
 import chatService from '../services/chatService'
+import MessageItem from './chat/MessageItem.vue'
+import ReactionPicker from './chat/ReactionPicker.vue'
+import { formatTime, formatFileSize, getUserDisplayName } from '../utils/formatters'
 
-const authStore = useAuthStore()
+const authStore = useWebSocketAuthStore()
 
 // Reactive data
 const conversations = ref([])
@@ -313,6 +303,8 @@ const showNewConversationModal = ref(false)
 const showFileUpload = ref(false)
 const selectedFiles = ref([])
 const availableUsers = ref([])
+const showEmojiPicker = ref(false)
+const uploadingFiles = ref(false)
 
 // Form data for new conversation
 const newConversation = ref({
@@ -326,13 +318,19 @@ const newConversation = ref({
 let socket = null
 
 // Computed
-const currentUser = authStore.user
+const currentUser = computed(() => authStore.user || null)
 
 // Methods
 const loadConversations = async () => {
   try {
     const response = await chatService.getConversations()
-    conversations.value = response.data
+    if (response.data.success && response.data.data) {
+      conversations.value = response.data.data
+    } else if (Array.isArray(response.data)) {
+      conversations.value = response.data
+    } else {
+      conversations.value = []
+    }
   } catch (error) {
     console.error('Failed to load conversations:', error)
   }
@@ -340,8 +338,19 @@ const loadConversations = async () => {
 
 const loadAvailableUsers = async () => {
   try {
+    console.log('🔍 Loading available users...')
     const response = await chatService.getAvailableUsers()
-    availableUsers.value = response.data
+    console.log('🔍 Available users response:', response)
+    
+    if (response.data.success && response.data.data) {
+      availableUsers.value = response.data.data
+    } else if (Array.isArray(response.data)) {
+      availableUsers.value = response.data
+    } else {
+      availableUsers.value = []
+    }
+    
+    console.log('🔍 Available users loaded:', availableUsers.value.length)
   } catch (error) {
     console.error('Failed to load available users:', error)
   }
@@ -353,7 +362,13 @@ const loadMessages = async (conversationId) => {
   loading.value = true
   try {
     const response = await chatService.getMessages(conversationId)
-    messages.value = response.data
+    if (response.data.success && response.data.data) {
+      messages.value = response.data.data
+    } else if (Array.isArray(response.data)) {
+      messages.value = response.data
+    } else {
+      messages.value = []
+    }
     scrollToBottom()
   } catch (error) {
     console.error('Failed to load messages:', error)
@@ -419,6 +434,7 @@ const uploadFiles = async () => {
   if (!selectedConversation.value || selectedFiles.value.length === 0) return
   
   try {
+    uploadingFiles.value = true
     const formData = new FormData()
     formData.append('conversationId', selectedConversation.value._id)
     selectedFiles.value.forEach(file => {
@@ -430,7 +446,55 @@ const uploadFiles = async () => {
     selectedFiles.value = []
   } catch (error) {
     console.error('Failed to upload files:', error)
+  } finally {
+    uploadingFiles.value = false
   }
+}
+
+const insertEmoji = (emoji) => {
+  const textarea = document.querySelector('.message-input')
+  if (textarea) {
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const text = newMessage.value
+    newMessage.value = text.substring(0, start) + emoji + text.substring(end)
+    nextTick(() => {
+      textarea.focus()
+      textarea.setSelectionRange(start + emoji.length, start + emoji.length)
+    })
+  }
+  showEmojiPicker.value = false
+}
+
+const handleClickOutside = (event) => {
+  if (showEmojiPicker.value && !event.target.closest('.emoji-button-container')) {
+    showEmojiPicker.value = false
+  }
+}
+
+const replyToMessage = (message) => {
+  // TODO: Implement reply functionality
+  console.log('Reply to message:', message)
+}
+
+const editMessage = (message) => {
+  // TODO: Implement edit functionality
+  console.log('Edit message:', message)
+}
+
+const deleteMessage = (messageId) => {
+  // TODO: Implement delete functionality
+  console.log('Delete message:', messageId)
+}
+
+const toggleReaction = (messageId, emoji) => {
+  // TODO: Implement reaction functionality
+  console.log('Toggle reaction:', messageId, emoji)
+}
+
+const copyMessageLink = (link) => {
+  // TODO: Implement copy link functionality
+  console.log('Copy link:', link)
 }
 
 const joinConversation = (conversationId) => {
@@ -472,31 +536,10 @@ const getInitials = (firstName, lastName) => {
 const getParticipantNames = (conversation) => {
   if (conversation.participants) {
     return conversation.participants
-      .map(p => `${p.user.firstName} ${p.user.lastName}`)
+      .map(p => getUserDisplayName(p.user))
       .join(', ')
   }
   return ''
-}
-
-const formatTime = (timestamp) => {
-  if (!timestamp) return ''
-  const date = new Date(timestamp)
-  const now = new Date()
-  const diff = now - date
-  
-  if (diff < 24 * 60 * 60 * 1000) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  } else {
-    return date.toLocaleDateString()
-  }
-}
-
-const formatFileSize = (bytes) => {
-  if (bytes === 0) return '0 Bytes'
-  const k = 1024
-  const sizes = ['Bytes', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 // Socket setup
@@ -518,12 +561,18 @@ onMounted(async () => {
   await loadConversations()
   await loadAvailableUsers()
   setupSocket()
+  
+  // Add click outside listener for emoji picker
+  document.addEventListener('click', handleClickOutside)
 })
 
 onUnmounted(() => {
   if (socket) {
     socket.disconnect()
   }
+  
+  // Remove click outside listener
+  document.removeEventListener('click', handleClickOutside)
 })
 </script>
 
@@ -857,6 +906,15 @@ onUnmounted(() => {
 .input-actions {
   display: flex;
   gap: 0.5rem;
+}
+
+.emoji-button-container {
+  position: relative;
+}
+
+.action-btn.active {
+  background-color: #dbeafe;
+  color: #1d4ed8;
 }
 
 .message-input-wrapper {

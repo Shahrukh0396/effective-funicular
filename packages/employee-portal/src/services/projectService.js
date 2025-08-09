@@ -1,34 +1,36 @@
-import { ref } from 'vue'
 import { config } from '@/config'
 import { useAuthStore } from '@/stores/authStore'
 
-const projects = ref([])
-const currentProject = ref(null)
-
 // API functions
 export const projectService = {
-  projects,
-  currentProject,
 
   async fetchProjects(filters = {}) {
     const authStore = useAuthStore()
     try {
-      const response = await fetch(`${config.apiUrl}/api/projects?${new URLSearchParams(filters)}`, {
-        headers: authStore.getAuthHeaders()
+      const headers = authStore.getAuthHeaders()
+      console.log('🔍 Project Service - Headers:', headers)
+      console.log('🔍 Project Service - Token present:', !!headers.Authorization)
+      
+      const response = await fetch(`${config.apiUrl}/api/employee/projects?${new URLSearchParams(filters)}`, {
+        headers: {
+          ...headers,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
       })
       
       const data = await response.json()
+      console.log('🔍 Project Service - Response status:', response.status)
+      console.log('🔍 Project Service - Response data:', data)
       
       if (!response.ok) {
         throw new Error(data.message || 'Failed to fetch projects')
       }
 
-      if (data.success) {
-        projects.value = data.data
-      } else {
-        projects.value = data // Handle direct array response
-      }
-
+      console.log('🔍 Project Service - Data received:', data)
+      console.log('🔍 Project Service - Data.success:', data.success)
+      console.log('🔍 Project Service - Data.data:', data.data)
+      
       return data
     } catch (error) {
       console.error('Error fetching projects:', error)
@@ -39,7 +41,7 @@ export const projectService = {
   async getProjectById(projectId) {
     const authStore = useAuthStore()
     try {
-      const response = await fetch(`${config.apiUrl}/api/projects/${projectId}`, {
+      const response = await fetch(`${config.apiUrl}/api/employee/projects/${projectId}`, {
         headers: authStore.getAuthHeaders()
       })
       
@@ -47,12 +49,6 @@ export const projectService = {
       
       if (!response.ok) {
         throw new Error(data.message || 'Failed to fetch project')
-      }
-
-      if (data.success) {
-        currentProject.value = data.data
-      } else {
-        currentProject.value = data // Handle direct object response
       }
 
       return data
@@ -65,7 +61,7 @@ export const projectService = {
   async updateProjectStatus(projectId, status) {
     const authStore = useAuthStore()
     try {
-      const response = await fetch(`${config.apiUrl}/api/projects/${projectId}/status`, {
+      const response = await fetch(`${config.apiUrl}/api/employee/projects/${projectId}/status`, {
         method: 'PATCH',
         headers: {
           ...authStore.getAuthHeaders(),
@@ -90,7 +86,7 @@ export const projectService = {
   async updateProjectHealth(projectId, health) {
     const authStore = useAuthStore()
     try {
-      const response = await fetch(`${config.apiUrl}/api/projects/${projectId}/health`, {
+      const response = await fetch(`${config.apiUrl}/api/employee/projects/${projectId}/health`, {
         method: 'PATCH',
         headers: {
           ...authStore.getAuthHeaders(),

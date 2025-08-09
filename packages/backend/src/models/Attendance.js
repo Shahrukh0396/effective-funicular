@@ -24,6 +24,45 @@ const attendanceSchema = new mongoose.Schema({
     type: Date
   },
   
+  // Break tracking
+  breaks: [{
+    startTime: {
+      type: Date,
+      required: true
+    },
+    endTime: Date,
+    duration: {
+      type: Number,
+      min: 0,
+      default: 0
+    },
+    reason: {
+      type: String,
+      enum: ['lunch', 'coffee', 'meeting', 'personal', 'other'],
+      default: 'other'
+    },
+    notes: {
+      type: String,
+      maxlength: [200, 'Break notes cannot exceed 200 characters']
+    }
+  }],
+  
+  // Current break status
+  currentBreak: {
+    startTime: {
+      type: Date
+    },
+    reason: {
+      type: String,
+      enum: ['lunch', 'coffee', 'meeting', 'personal', 'other'],
+      default: 'other'
+    },
+    isActive: {
+      type: Boolean,
+      default: false
+    }
+  },
+  
   // Calculated hours
   totalHours: {
     type: Number,
@@ -142,7 +181,19 @@ attendanceSchema.index({ employee: 1, createdAt: -1 })
 // Pre-save middleware to update total hours
 attendanceSchema.pre('save', function(next) {
   if (this.checkIn && this.checkOut) {
-    this.totalHours = (this.checkOut - this.checkIn) / (1000 * 60 * 60)
+    // Calculate total working hours
+    const totalTime = this.checkOut - this.checkIn
+    
+    // Subtract break time from total hours
+    const breakTime = this.breaks.reduce((total, break_) => {
+      if (break_.endTime) {
+        return total + (break_.endTime - break_.startTime)
+      }
+      return total
+    }, 0)
+    
+    // Calculate net working hours
+    this.totalHours = Math.max(0, (totalTime - breakTime) / (1000 * 60 * 60))
   }
   this.updatedAt = new Date()
   next()

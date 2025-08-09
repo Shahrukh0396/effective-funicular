@@ -55,7 +55,7 @@ export const taskService = {
       }
 
       if (data.success) {
-        tasks.value = data.data
+        tasks.value = data.data.tasks || data.data
       }
 
       return data

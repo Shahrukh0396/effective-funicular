@@ -9,9 +9,36 @@ const conversationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['direct', 'group', 'project'],
+    enum: ['direct', 'group', 'project', 'channel', 'support'],
     default: 'direct',
     required: true
+  },
+  
+  // Channel type (for Slack-like channels)
+  channelType: {
+    type: String,
+    enum: ['general', 'random', 'project', 'custom'],
+    default: 'custom'
+  },
+  
+  // Channel visibility (public/private)
+  isPublic: {
+    type: Boolean,
+    default: true
+  },
+  
+  // Channel purpose/description
+  purpose: {
+    type: String,
+    trim: true,
+    maxlength: 500
+  },
+  
+  // Channel topic
+  topic: {
+    type: String,
+    trim: true,
+    maxlength: 250
   },
   
   // Participants
@@ -95,6 +122,7 @@ const conversationSchema = new mongoose.Schema({
 // Indexes for performance
 conversationSchema.index({ vendor: 1, participants: 1 })
 conversationSchema.index({ vendor: 1, project: 1 })
+conversationSchema.index({ vendor: 1, type: 1, channelType: 1 })
 conversationSchema.index({ 'lastMessage.timestamp': -1 })
 
 // Virtual for unread count
@@ -164,6 +192,72 @@ conversationSchema.statics.findUserConversations = function(userId, vendorId) {
   .populate('project', 'name')
   .populate('lastMessage.sender', 'firstName lastName')
   .sort({ 'lastMessage.timestamp': -1 })
+}
+
+// Get all available channels for a user (public channels + private channels they're a member of)
+conversationSchema.statics.findAvailableChannels = function(userId, vendorId) {
+  return this.find({
+    vendor: vendorId,
+    type: 'channel',
+    $or: [
+      { isPublic: true }, // Public channels
+      { 'participants.user': userId } // Private channels where user is a participant
+    ]
+  })
+  .populate('participants.user', 'firstName lastName email avatar')
+  .populate('createdBy', 'firstName lastName email avatar')
+  .sort({ name: 1 })
+}
+
+// Create default channels for a vendor
+conversationSchema.statics.createDefaultChannels = async function(vendorId, createdBy) {
+  const defaultChannels = [
+    {
+      name: 'general',
+      channelType: 'general',
+      purpose: 'General discussion for the team',
+      topic: 'Company-wide announcements and general discussion',
+      type: 'channel',
+      isPublic: true,
+      isPrivate: false
+    },
+    {
+      name: 'random',
+      channelType: 'random',
+      purpose: 'Non-work related discussions',
+      topic: 'Water cooler chat and casual conversations',
+      type: 'channel',
+      isPublic: true,
+      isPrivate: false
+    }
+  ]
+  
+  const channels = []
+  for (const channelData of defaultChannels) {
+    const existingChannel = await this.findOne({
+      vendor: vendorId,
+      name: channelData.name,
+      type: 'channel'
+    })
+    
+    if (!existingChannel) {
+      const channel = new this({
+        ...channelData,
+        vendor: vendorId,
+        createdBy,
+        participants: [{
+          user: createdBy,
+          role: 'admin',
+          joinedAt: new Date(),
+          lastReadAt: new Date()
+        }]
+      })
+      await channel.save()
+      channels.push(channel)
+    }
+  }
+  
+  return channels
 }
 
 module.exports = mongoose.model('Conversation', conversationSchema) 

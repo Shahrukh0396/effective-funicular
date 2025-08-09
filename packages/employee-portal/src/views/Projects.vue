@@ -12,6 +12,15 @@
           </p>
         </div>
         <div class="mt-4 flex md:mt-0 md:ml-4 space-x-3">
+          <button
+            @click="addNewProject"
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            Add Project
+          </button>
           <select
             v-model="selectedStatus"
             class="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
@@ -57,16 +66,20 @@
     </div>
 
     <!-- Projects Grid -->
-    <div v-else class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+    <div v-if="!projectStore.loading && !projectStore.error" class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      
       <div
-        v-for="project in filteredProjects"
-        :key="project.id"
+        v-for="(project, index) in filteredProjects"
+        :key="project._id || project.id || index"
         class="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow duration-200"
       >
         <div class="px-4 py-5 sm:p-6">
           <!-- Project Header -->
           <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-medium text-gray-900 truncate">{{ project.name }}</h3>
+            <h3 class="text-lg font-medium text-gray-900 truncate">
+              {{ project.name || 'No Name' }}
+              <span class="text-xs text-gray-500">(ID: {{ project._id || project.id }})</span>
+            </h3>
             <div class="flex space-x-2">
               <span
                 :class="[
@@ -95,8 +108,9 @@
           <!-- Project Type -->
           <div class="mb-3">
             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-              {{ formatProjectType(project.type) }}
+              {{ formatProjectType(project.type) || 'Unknown Type' }}
             </span>
+            <span class="text-xs text-gray-500 ml-2">Raw type: {{ project.type }}</span>
           </div>
 
           <!-- Project Description -->
@@ -106,15 +120,15 @@
           <div class="space-y-2 mb-4">
             <div class="flex justify-between text-sm">
               <span class="text-gray-500">Manager:</span>
-              <span class="font-medium text-gray-900">{{ project.projectManager }}</span>
+              <span class="font-medium text-gray-900">{{ project.team?.projectManager?.firstName }} {{ project.team?.projectManager?.lastName }}</span>
             </div>
             <div class="flex justify-between text-sm">
               <span class="text-gray-500">Budget:</span>
-              <span class="font-medium text-gray-900">{{ project.budgetRange || 'Not specified' }}</span>
+              <span class="font-medium text-gray-900">{{ project.budget?.estimated ? `$${project.budget.estimated.toLocaleString()}` : 'Not specified' }}</span>
             </div>
             <div class="flex justify-between text-sm">
               <span class="text-gray-500">Duration:</span>
-              <span class="font-medium text-gray-900">{{ project.estimatedDuration || 'Not specified' }}</span>
+              <span class="font-medium text-gray-900">{{ project.duration || 'Not specified' }} days</span>
             </div>
             <div class="flex justify-between text-sm">
               <span class="text-gray-500">Team Size:</span>
@@ -128,8 +142,8 @@
               <span>Timeline</span>
             </div>
             <div class="text-xs text-gray-600">
-              <div>Start: {{ formatDate(project.startDate) }}</div>
-              <div>Due: {{ formatDate(project.dueDate) }}</div>
+              <div>Start: {{ formatDate(project.timeline?.startDate) }}</div>
+              <div>Due: {{ formatDate(project.timeline?.endDate) }}</div>
             </div>
           </div>
 
@@ -137,22 +151,22 @@
           <div class="mb-4">
             <div class="flex justify-between text-sm text-gray-500 mb-2">
               <span>Team</span>
-              <span>{{ project.team.length }} members</span>
+              <span>{{ project.team?.members?.length || 0 }} members</span>
             </div>
             <div class="flex -space-x-2">
               <div
-                v-for="(member, index) in project.team.slice(0, 4)"
+                v-for="(member, index) in (project.team?.members || []).slice(0, 4)"
                 :key="index"
                 class="h-8 w-8 rounded-full bg-gray-200 border-2 border-white flex items-center justify-center"
-                :title="`${member.name} (${member.role})`"
+                :title="`${member.user?.firstName} ${member.user?.lastName} (${member.role})`"
               >
-                <span class="text-xs font-medium text-gray-600">{{ member.initials }}</span>
+                <span class="text-xs font-medium text-gray-600">{{ getInitials(member.user?.firstName || '', member.user?.lastName || '') }}</span>
               </div>
               <div
-                v-if="project.team.length > 4"
+                v-if="(project.team?.members || []).length > 4"
                 class="h-8 w-8 rounded-full bg-gray-100 border-2 border-white flex items-center justify-center"
               >
-                <span class="text-xs font-medium text-gray-500">+{{ project.team.length - 4 }}</span>
+                <span class="text-xs font-medium text-gray-500">+{{ (project.team?.members || []).length - 4 }}</span>
               </div>
             </div>
           </div>
@@ -160,7 +174,7 @@
           <!-- Action Buttons -->
           <div class="flex space-x-2">
             <router-link
-              :to="`/projects/${project.id}`"
+              :to="`/projects/${project._id || project.id}`"
               class="flex-1 inline-flex justify-center items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
             >
               View Details
@@ -189,22 +203,127 @@
         {{ selectedStatus || selectedPriority ? 'Try adjusting your filters.' : 'Get started by creating a new project.' }}
       </p>
     </div>
+
+    <!-- Task Creation Modal -->
+    <div v-if="showTaskModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+      <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-medium text-gray-900">Create New Task</h3>
+            <button @click="closeTaskModal" class="text-gray-400 hover:text-gray-600">
+              <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          <form @submit.prevent="submitTask">
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Task Title</label>
+                <input
+                  v-model="newTask.title"
+                  type="text"
+                  required
+                  class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="Enter task title"
+                />
+              </div>
+              
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Description</label>
+                <textarea
+                  v-model="newTask.description"
+                  rows="3"
+                  class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="Enter task description"
+                ></textarea>
+              </div>
+              
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Priority</label>
+                <select
+                  v-model="newTask.priority"
+                  required
+                  class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                >
+                  <option value="">Select priority</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+              
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Status</label>
+                <select
+                  v-model="newTask.status"
+                  required
+                  class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                >
+                  <option value="">Select status</option>
+                  <option value="todo">To Do</option>
+                  <option value="in-progress">In Progress</option>
+                  <option value="review">Review</option>
+                  <option value="done">Done</option>
+                </select>
+              </div>
+              
+              <div v-if="selectedProjectForTask">
+                <p class="text-sm text-gray-600">
+                  <strong>Project:</strong> {{ selectedProjectForTask.name }}
+                </p>
+              </div>
+            </div>
+            
+            <div class="mt-6 flex justify-end space-x-3">
+              <button
+                type="button"
+                @click="closeTaskModal"
+                class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                :disabled="taskSubmitting"
+                class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+              >
+                {{ taskSubmitting ? 'Creating...' : 'Create Task' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useProjectStore } from '../stores/projectStore'
+import { taskService } from '../services/taskService'
 import { format } from 'date-fns'
 
 const projectStore = useProjectStore()
-const { projects, fetchProjects } = projectStore
+const { fetchProjects } = projectStore
 
 const selectedStatus = ref('')
 const selectedPriority = ref('')
 
+// Task creation modal state
+const showTaskModal = ref(false)
+const taskSubmitting = ref(false)
+const selectedProjectForTask = ref(null)
+const newTask = ref({
+  title: '',
+  description: '',
+  priority: '',
+  status: 'todo'
+})
+
 const filteredProjects = computed(() => {
-  let filtered = projects.value
+  let filtered = projectStore.projects || []
 
   if (selectedStatus.value) {
     filtered = filtered.filter(project => project.status === selectedStatus.value)
@@ -224,11 +343,17 @@ function formatDate(date) {
 function formatProjectType(type) {
   const typeMap = {
     'web-development': 'Web Development',
+    'web_development': 'Web Development',
     'mobile-app': 'Mobile App',
+    'mobile_app': 'Mobile App',
     'desktop-app': 'Desktop App',
+    'desktop_app': 'Desktop App',
     'api-development': 'API Development',
+    'api_development': 'API Development',
     'database-design': 'Database Design',
+    'database_design': 'Database Design',
     'ui-ux-design': 'UI/UX Design',
+    'ui_ux_design': 'UI/UX Design',
     'consulting': 'Consulting',
     'maintenance': 'Maintenance',
     'other': 'Other'
@@ -236,10 +361,62 @@ function formatProjectType(type) {
   return typeMap[type] || type
 }
 
+function getInitials(firstName, lastName) {
+  const first = firstName?.charAt(0) || ''
+  const last = lastName?.charAt(0) || ''
+  return (first + last).toUpperCase()
+}
+
 function createTaskFromProject(project) {
-  // TODO: Implement task creation from project requirements
-  console.log('Create task from project:', project)
-  // This could open a modal or navigate to task creation with pre-filled project info
+  selectedProjectForTask.value = project
+  showTaskModal.value = true
+}
+
+function closeTaskModal() {
+  showTaskModal.value = false
+  selectedProjectForTask.value = null
+  newTask.value = {
+    title: '',
+    description: '',
+    priority: '',
+    status: 'todo'
+  }
+}
+
+async function submitTask() {
+  if (!selectedProjectForTask.value) {
+    alert('No project selected')
+    return
+  }
+
+  taskSubmitting.value = true
+  
+  try {
+    const taskData = {
+      ...newTask.value,
+      project: selectedProjectForTask.value._id || selectedProjectForTask.value.id
+    }
+    
+    await taskService.createTask(taskData)
+    
+    // Show success message
+    alert('Task created successfully!')
+    
+    // Close modal
+    closeTaskModal()
+    
+  } catch (error) {
+    console.error('Error creating task:', error)
+    alert('Failed to create task: ' + error.message)
+  } finally {
+    taskSubmitting.value = false
+  }
+}
+
+function addNewProject() {
+  // TODO: Implement project creation
+  // This could open a modal or navigate to project creation form
+  console.log('Add new project functionality to be implemented')
 }
 
 onMounted(() => {

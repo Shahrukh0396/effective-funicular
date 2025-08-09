@@ -185,13 +185,34 @@ sessionSchema.statics.countActiveSessions = function(userId, vendorId) {
 
 // Static method to find session by token
 sessionSchema.statics.findByToken = function(token, tokenType = 'accessToken') {
+  console.log('🔐 Finding session by token:', {
+    tokenType,
+    tokenLength: token ? token.length : 0,
+    tokenStart: token ? token.substring(0, 10) + '...' : 'null'
+  })
+  
   const query = {}
   query[tokenType] = token
   
-  return this.findOne({
+  const fullQuery = {
     ...query,
     isActive: true,
     isBlacklisted: false
+  }
+  
+  console.log('🔐 Session query:', fullQuery)
+  
+  return this.findOne(fullQuery).then(result => {
+    console.log('🔐 Session lookup result:', !!result)
+    if (result) {
+      console.log('🔐 Found session:', {
+        sessionId: result.sessionId,
+        userId: result.user,
+        vendorId: result.vendor,
+        isActive: result.isActive
+      })
+    }
+    return result
   })
 }
 

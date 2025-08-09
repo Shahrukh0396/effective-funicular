@@ -213,11 +213,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useTaskStore } from '../stores/taskStore'
-import { useUserStore } from '../stores/userStore'
+import { useAuthStore } from '../stores/authStore'
 import { formatDistanceToNow } from 'date-fns'
 
 const taskStore = useTaskStore()
-const userStore = useUserStore()
+const authStore = useAuthStore()
 
 const loading = ref(false)
 const error = ref(null)
@@ -226,11 +226,15 @@ const unclaimingTask = ref(null)
 const statusFilter = ref('all')
 const priorityFilter = ref('all')
 
-const currentUser = computed(() => userStore.user)
-const tasks = computed(() => taskStore.availableTasks)
+const currentUser = computed(() => authStore.user || { id: null })
+const tasks = computed(() => {
+  console.log('🔍 AvailableTasks - Computing tasks:', taskStore.availableTasks)
+  return taskStore.availableTasks
+})
 
 const filteredTasks = computed(() => {
-  let filtered = tasks.value
+  console.log('🔍 AvailableTasks - Computing filtered tasks from:', tasks.value)
+  let filtered = tasks.value || []
 
   // Filter by status
   if (statusFilter.value === 'unassigned') {
@@ -244,6 +248,7 @@ const filteredTasks = computed(() => {
     filtered = filtered.filter(task => task.priority === priorityFilter.value)
   }
 
+  console.log('🔍 AvailableTasks - Filtered tasks result:', filtered)
   return filtered
 })
 
@@ -301,16 +306,20 @@ const unclaimTask = async (taskId) => {
 }
 
 const viewTaskDetails = (task) => {
-  // Implement task details view
-  console.log('View task details:', task)
+  // Show task details in a modal or navigate to task details page
+  alert(`Task Details:\n\nTitle: ${task.title}\nDescription: ${task.description}\nPriority: ${task.priority}\nStatus: ${task.status}\nProject: ${task.project?.name || 'No project'}\nAssigned To: ${task.assignedTo ? `${task.assignedTo.firstName} ${task.assignedTo.lastName}` : 'Unassigned'}`)
 }
 
 const loadTasks = async () => {
   loading.value = true
   error.value = null
   try {
+    console.log('🔍 AvailableTasks - Loading tasks...')
     await taskStore.fetchAvailableTasks()
+    console.log('🔍 AvailableTasks - Tasks loaded:', taskStore.availableTasks)
+    console.log('🔍 AvailableTasks - Current user:', currentUser.value)
   } catch (err) {
+    console.error('🔍 AvailableTasks - Error loading tasks:', err)
     error.value = err.message || 'Failed to load tasks'
   } finally {
     loading.value = false
@@ -318,6 +327,9 @@ const loadTasks = async () => {
 }
 
 onMounted(async () => {
+  console.log('🔍 AvailableTasks - Component mounted')
+  console.log('🔍 AvailableTasks - Auth store user:', authStore.user)
+  console.log('🔍 AvailableTasks - Auth store token:', !!authStore.token)
   await loadTasks()
 })
 </script> 

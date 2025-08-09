@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useAuthStore } from '../stores/authStore'
+import { useWebSocketAuthStore } from '../stores/websocketAuthStore'
 import Landing from '../views/Landing.vue'
 import Dashboard from '../views/Dashboard.vue'
 import Clients from '../views/Clients.vue'
@@ -10,7 +10,11 @@ import SuperAccounts from '../views/SuperAccounts.vue'
 import Analytics from '../views/Analytics.vue'
 import Projects from '../views/Projects.vue'
 import Sprints from '../views/Sprints.vue'
+import Attendance from '../views/Attendance.vue'
+import Support from '../views/Support.vue'
+import ChatInterface from '../components/ChatInterface.vue'
 import Login from '../views/Login.vue'
+import MFASetup from '../views/MFASetup.vue'
 
 const routes = [
   {
@@ -23,6 +27,12 @@ const routes = [
     path: '/login',
     name: 'Login',
     component: Login,
+    meta: { requiresAuth: false }
+  },
+  {
+    path: '/mfa-setup',
+    name: 'MFASetup',
+    component: MFASetup,
     meta: { requiresAuth: false }
   },
   {
@@ -80,9 +90,21 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/attendance',
+    name: 'Attendance',
+    component: Attendance,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/support',
+    name: 'Support',
+    component: Support,
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/chat',
     name: 'Chat',
-    component: () => import('../components/ChatInterface.vue'),
+    component: ChatInterface,
     meta: { requiresAuth: true }
   }
 ]
@@ -93,23 +115,37 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
-  const authStore = useAuthStore()
+  const authStore = useWebSocketAuthStore()
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth)
   const requiresSuperAdmin = to.matched.some(record => record.meta.requiresSuperAdmin)
 
-  // Check if the user is authenticated
-  const isAuthenticated = await authStore.checkAuth()
+  // Check if the user is authenticated using the WebSocket auth store
+  const isAuthenticated = authStore.isAuthenticated
+
+  console.log('🔐 Router Guard:', {
+    to: to.path,
+    from: from.path,
+    isAuthenticated,
+    requiresAuth,
+    requiresSuperAdmin,
+    user: authStore.user,
+    token: !!authStore.token
+  })
 
   if (requiresAuth && !isAuthenticated) {
-    // Redirect to login if trying to access a protected route while not authenticated
+    console.log('🔐 Redirecting to login - requires auth but not authenticated')
     next('/login')
   } else if (requiresSuperAdmin && !authStore.isSuperAdmin) {
-    // Redirect to dashboard if trying to access super admin route without permissions
-    next('/')
+    console.log('🔐 Redirecting to dashboard - requires super admin but not super admin')
+    next('/dashboard')
   } else if (to.path === '/login' && isAuthenticated) {
-    // Redirect to dashboard if trying to access login while authenticated
+    console.log('🔐 Redirecting to dashboard - authenticated user trying to access login')
+    next('/dashboard')
+  } else if (to.path === '/' && isAuthenticated) {
+    console.log('🔐 Redirecting to dashboard - authenticated user on landing page')
     next('/dashboard')
   } else {
+    console.log('🔐 Proceeding to:', to.path)
     next()
   }
 })

@@ -6,6 +6,7 @@ const User = require('../models/User')
 const Session = require('../models/Session')
 const AuditLog = require('../models/AuditLog')
 const Vendor = require('../models/Vendor')
+const mfaService = require('./mfaService')
 
 class AuthService {
   // Generate access token
@@ -80,13 +81,18 @@ class AuthService {
 
   // Create session
   async createSession(user, vendor, portalType, accessToken, refreshToken, requestInfo) {
+    console.log('🔐 Creating session for user:', user.email)
+    
     // Check concurrent session limit
     const activeSessions = await Session.countActiveSessions(user._id, vendor._id)
+    console.log('🔐 Active sessions count:', activeSessions)
+    
     if (activeSessions >= config.session.maxConcurrentSessions) {
       // Deactivate oldest session
       const oldestSession = await Session.findActiveSessions(user._id, vendor._id)
       if (oldestSession.length > 0) {
         await oldestSession[0].deactivate()
+        console.log('🔐 Deactivated oldest session')
       }
     }
 
@@ -114,6 +120,12 @@ class AuthService {
     })
 
     await session.save()
+    console.log('🔐 Session created successfully:', {
+      sessionId: session.sessionId,
+      userId: session.user,
+      vendorId: session.vendor,
+      isActive: session.isActive
+    })
     return session
   }
 
@@ -296,6 +308,279 @@ class AuthService {
       default:
         return false
     }
+  }
+
+  // NEW: Enhanced security validation
+  async validateUserSecurity(user, requestInfo) {
+    const issues = []
+
+    // Check if account is locked
+    if (user.isAccountLocked()) {
+      issues.push({
+        type: 'account_locked',
+        message: 'Account is temporarily locked due to multiple failed login attempts',
+        unlockTime: user.security.accountLockedUntil
+      })
+    }
+
+    // Check if password is expired
+    if (user.isPasswordExpired()) {
+      issues.push({
+        type: 'password_expired',
+        message: 'Password has expired. Please reset your password',
+        expiresAt: user.security.passwordExpiresAt
+      })
+    }
+
+    // Check for suspicious activity
+    const riskScore = this.calculateRiskScore(user, requestInfo, [])
+    if (riskScore > 0.7) {
+      issues.push({
+        type: 'suspicious_activity',
+        message: 'Suspicious login activity detected',
+        riskScore: riskScore
+      })
+    }
+
+    // Check IP whitelist (if configured)
+    if (user.security.ipWhitelist && user.security.ipWhitelist.length > 0) {
+      const clientIP = requestInfo.ipAddress
+      if (!user.security.ipWhitelist.includes(clientIP)) {
+        issues.push({
+          type: 'ip_not_whitelisted',
+          message: 'Access denied from this IP address',
+          clientIP: clientIP
+        })
+      }
+    }
+
+    return {
+      isValid: issues.length === 0,
+      issues: issues,
+      riskScore: riskScore
+    }
+  }
+
+  // NEW: MFA validation during login
+  async validateMFAForLogin(user, portalType, mfaToken, mfaMethod = 'auto') {
+    // Check if MFA is required for this user/portal
+    if (!mfaService.isMFARequired(user, portalType)) {
+      return { required: false, valid: true }
+    }
+
+    // If MFA is required but no token provided
+    if (!mfaToken) {
+      return { 
+        required: true, 
+        valid: false, 
+        error: 'MFA token required for this account/portal' 
+      }
+    }
+
+    // Auto-detect MFA method if not specified
+    let method = mfaMethod
+    if (mfaMethod === 'auto') {
+      // If token is 6 digits, assume TOTP; otherwise assume backup code
+      method = /^\d{6}$/.test(mfaToken) ? 'totp' : 'backup'
+    }
+
+    try {
+      // Verify MFA token
+      await mfaService.verifyMFALogin(user, mfaToken, method)
+      return { required: true, valid: true, method: method }
+    } catch (error) {
+      return { 
+        required: true, 
+        valid: false, 
+        error: error.message 
+      }
+    }
+  }
+
+  // NEW: Enhanced login with MFA support
+  async handleLoginWithMFA(user, vendor, portalType, requestInfo, session, mfaToken, mfaMethod) {
+    // Validate MFA if required
+    const mfaValidation = await this.validateMFAForLogin(user, portalType, mfaToken, mfaMethod)
+    
+    if (!mfaValidation.valid) {
+      throw new Error(mfaValidation.error || 'MFA validation failed')
+    }
+
+    // Handle successful login with enhanced security
+    await this.handleSuccessfulLogin(user, vendor, portalType, requestInfo, session)
+
+    // Update session with MFA information
+    if (session) {
+      session.security.mfaUsed = mfaValidation.required
+      session.security.mfaMethod = mfaMethod
+      await session.save()
+    }
+
+    return {
+      mfaRequired: mfaValidation.required,
+      mfaVerified: mfaValidation.valid
+    }
+  }
+
+  // NEW: Get MFA setup information
+  async getMFASetupInfo(user, portalType = 'admin') {
+    const mfaStatus = mfaService.getMFAStatus(user, portalType)
+    
+    if (mfaStatus.enabled) {
+      return {
+        status: 'enabled',
+        backupCodesCount: mfaStatus.backupCodesCount,
+        required: mfaStatus.required
+      }
+    }
+
+    if (mfaStatus.secret === 'configured') {
+      return {
+        status: 'configured_not_enabled',
+        message: 'MFA is configured but not enabled. Please complete setup.'
+      }
+    }
+
+    return {
+      status: 'not_configured',
+      required: mfaStatus.required
+    }
+  }
+
+  // Handle failed login attempts
+  async handleFailedLogin(user, requestInfo) {
+    // Increment failed attempts
+    await user.incrementFailedAttempts()
+
+    // Log the failed attempt
+    await this.logAuthEvent({
+      event: 'user.login.failed',
+      userId: user._id,
+      vendorId: user.vendorId,
+      portalType: 'system',
+      request: requestInfo,
+      security: {
+        riskScore: this.calculateRiskScore(user, requestInfo, []),
+        suspiciousActivity: false,
+        failedAttempts: user.security.failedLoginAttempts
+      },
+      metadata: {
+        reason: 'Invalid credentials',
+        success: false
+      }
+    })
+
+    // Check if account should be locked
+    if (user.isAccountLocked()) {
+      await this.logAuthEvent({
+        event: 'user.login.locked',
+        userId: user._id,
+        vendorId: user.vendorId,
+        portalType: 'system',
+        request: requestInfo,
+        security: {
+          riskScore: 1.0,
+          suspiciousActivity: true,
+          failedAttempts: user.security.failedLoginAttempts
+        },
+        metadata: {
+          reason: 'Account locked due to multiple failed attempts',
+          success: false
+        }
+      })
+    }
+  }
+
+  // NEW: Handle successful login with security checks
+  async handleSuccessfulLogin(user, vendor, portalType, requestInfo, session) {
+    // Reset failed attempts
+    await user.resetFailedAttempts()
+
+    // Update last login information
+    user.lastLogin = new Date()
+    user.security.lastLoginLocation = requestInfo.location
+    user.security.lastLoginDevice = this.detectDeviceType(requestInfo.userAgent)
+    await user.save()
+
+    // Calculate risk score
+    const riskScore = this.calculateRiskScore(user, requestInfo, [])
+    
+    // Update session with risk information
+    if (session) {
+      session.security.riskScore = riskScore
+      session.security.suspiciousActivity = riskScore > 0.7
+      await session.save()
+    }
+
+    // Log successful login
+    await this.logAuthEvent({
+      event: 'user.login.success',
+      userId: user._id,
+      vendorId: vendor._id,
+      portalType: portalType,
+      sessionId: session?.sessionId,
+      request: requestInfo,
+      security: {
+        riskScore: riskScore,
+        suspiciousActivity: riskScore > 0.7,
+        mfaUsed: false,
+        loginMethod: 'email_password'
+      },
+      metadata: {
+        success: true,
+        portalType: portalType
+      }
+    })
+
+    // Log suspicious activity if detected
+    if (riskScore > 0.7) {
+      await this.logAuthEvent({
+        event: 'security.suspicious.activity',
+        userId: user._id,
+        vendorId: vendor._id,
+        portalType: portalType,
+        sessionId: session?.sessionId,
+        request: requestInfo,
+        security: {
+          riskScore: riskScore,
+          suspiciousActivity: true
+        },
+        metadata: {
+          reason: 'High risk score detected',
+          riskFactors: this.getRiskFactors(user, requestInfo)
+        }
+      })
+    }
+  }
+
+  // NEW: Get risk factors for logging
+  getRiskFactors(user, requestInfo) {
+    const factors = []
+
+    // Check for unusual location
+    if (user.security.lastLoginLocation && 
+        user.security.lastLoginLocation !== requestInfo.location) {
+      factors.push('unusual_location')
+    }
+
+    // Check for unusual device
+    if (user.security.lastLoginDevice && 
+        user.security.lastLoginDevice !== this.detectDeviceType(requestInfo.userAgent)) {
+      factors.push('unusual_device')
+    }
+
+    // Check for unusual time
+    const hour = new Date().getHours()
+    if (hour < 6 || hour > 22) {
+      factors.push('unusual_time')
+    }
+
+    // Check for failed attempts
+    if (user.security.failedLoginAttempts > 0) {
+      factors.push('recent_failed_attempts')
+    }
+
+    return factors
   }
 
   // Get user permissions for portal

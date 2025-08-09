@@ -12,6 +12,7 @@ const config = require('./config')
 const swaggerSpecs = require('./config/swagger')
 const swaggerFixMiddleware = require('./middleware/swaggerFix')
 const scheduler = require('./utils/scheduler')
+const WebSocketAuthService = require('./services/websocketAuthService')
 
 // Import security middleware
 const { 
@@ -43,6 +44,8 @@ const chatRoutes = require('./routes/chatRoutes')
 const marketingRoutes = require('./routes/marketingRoutes')
 const analyticsRoutes = require('./routes/analyticsRoutes')
 const timeTrackingRoutes = require('./routes/timeTrackingRoutes')
+const mfaRoutes = require('./routes/mfaRoutes')
+const testRoutes = require('./routes/testRoutes')
 
 // Create Express app
 const app = express()
@@ -61,11 +64,18 @@ const io = new Server(httpServer, {
       'https://app.linton-tech.com',
       'https://admin.linton-tech.com',
       'https://employee.linton-tech.com',
-      'https://api.linton-tech.com'
+      'https://api.linton-tech.com',
+      // Allow localhost with any port for development
+      /^http:\/\/localhost:\d+$/,
+      /^http:\/\/127\.0\.0\.1:\d+$/
     ],
-    methods: ['GET', 'POST'],
-    credentials: true
-  }
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: true,
+    optionsSuccessStatus: 200
+  },
+  allowEIO3: true, // Allow Engine.IO v3 clients
+  transports: ['polling', 'websocket']
 })
 
 // Export app and io for testing
@@ -92,9 +102,9 @@ app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
 // Multi-tenant middleware
-app.use(detectVendor)
-app.use(filterByVendor)
-app.use(injectVendorBranding)
+// app.use(detectVendor)
+// app.use(filterByVendor)
+// app.use(injectVendorBranding)
 
 // Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')))
@@ -140,6 +150,22 @@ app.get('/health', (req, res) => {
   })
 })
 
+// Socket.IO connection test endpoint
+app.get('/socket-test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Socket.IO server is running',
+    socketUrl: `http://localhost:${config.port}`,
+    corsOrigins: [
+      config.clientUrl,
+      config.employeeUrl,
+      config.adminUrl,
+      config.marketingUrl,
+      config.superAdminUrl
+    ]
+  })
+})
+
 // API routes
 app.use('/api/auth', authRoutes)
 app.use('/api/users', userRoutes)
@@ -157,6 +183,8 @@ app.use('/api/chat', chatRoutes)
 app.use('/api/marketing', marketingRoutes)
 app.use('/api/analytics', analyticsRoutes)
 app.use('/api/time-entries', timeTrackingRoutes)
+app.use('/api/mfa', mfaRoutes)
+app.use('/api/test', testRoutes)
 
 // 404 handler
 app.use(notFound)
@@ -178,7 +206,7 @@ if (process.env.NODE_ENV !== 'test') {
         console.log(`🚀 Server is running on port ${config.port}`)
         console.log(`📊 Environment: ${config.nodeEnv}`)
         console.log(`🔗 Health check: http://localhost:${config.port}/health`)
-        console.log(`📚 API Documentation: http://localhost:${config.port}/api-docs`)
+        console.log(`�� API Documentation: http://localhost:${config.port}/api-docs`)
         console.log(`🌐 Network access: http://0.0.0.0:${config.port}`)
         console.log(`💡 Use your machine's IP address to access from other devices`)
       })
@@ -189,9 +217,14 @@ if (process.env.NODE_ENV !== 'test') {
     })
 }
 
+// Initialize WebSocket authentication service
+const wsAuthService = new WebSocketAuthService(io)
+
 // Socket.IO connection handling
 io.on('connection', (socket) => {
   console.log('🔌 Client connected:', socket.id)
+  console.log('📍 Client origin:', socket.handshake.headers.origin)
+  console.log('🌐 Client address:', socket.handshake.address)
 
   // Join user to their room for private messages
   socket.on('join', (userId) => {
@@ -226,6 +259,22 @@ io.on('connection', (socket) => {
     })
   })
 
+  // Typing start
+  socket.on('typing:start', ({ conversationId, userId }) => {
+    socket.to(`conversation_${conversationId}`).emit('typing:start', {
+      conversationId,
+      userId
+    })
+  })
+
+  // Typing stop
+  socket.on('typing:stop', ({ conversationId, userId }) => {
+    socket.to(`conversation_${conversationId}`).emit('typing:stop', {
+      conversationId,
+      userId
+    })
+  })
+
   // Message read receipt
   socket.on('messageRead', ({ messageId, conversationId, userId }) => {
     socket.to(`conversation_${conversationId}`).emit('messageRead', {
@@ -235,8 +284,87 @@ io.on('connection', (socket) => {
     })
   })
 
-  socket.on('disconnect', () => {
-    console.log('🔌 Client disconnected:', socket.id)
+  // Message delivered receipt
+  socket.on('messageDelivered', ({ messageId, conversationId, userId }) => {
+    socket.to(`conversation_${conversationId}`).emit('messageDelivered', {
+      messageId,
+      conversationId,
+      userId
+    })
+  })
+
+  // Message sent receipt
+  socket.on('messageSent', ({ messageId, conversationId, userId }) => {
+    socket.to(`user_${userId}`).emit('messageSent', {
+      messageId,
+      conversationId,
+      userId
+    })
+  })
+
+  // Reaction events
+  socket.on('reaction:add', ({ messageId, conversationId, emoji, userId }) => {
+    socket.to(`conversation_${conversationId}`).emit('reaction:added', {
+      messageId,
+      conversationId,
+      emoji,
+      userId
+    })
+  })
+
+  socket.on('reaction:remove', ({ messageId, conversationId, emoji, userId }) => {
+    socket.to(`conversation_${conversationId}`).emit('reaction:removed', {
+      messageId,
+      conversationId,
+      emoji,
+      userId
+    })
+  })
+
+  // Message edit events
+  socket.on('message:edit', ({ messageId, conversationId, content, userId }) => {
+    socket.to(`conversation_${conversationId}`).emit('message:edited', {
+      messageId,
+      conversationId,
+      content,
+      userId
+    })
+  })
+
+  // Message delete events
+  socket.on('message:delete', ({ messageId, conversationId, userId }) => {
+    socket.to(`conversation_${conversationId}`).emit('message:deleted', {
+      messageId,
+      conversationId,
+      userId
+    })
+  })
+
+  // User presence
+  socket.on('presence:online', (userId) => {
+    socket.broadcast.emit('user:online', { userId })
+  })
+
+  socket.on('presence:away', (userId) => {
+    socket.broadcast.emit('user:away', { userId })
+  })
+
+  socket.on('disconnect', (reason) => {
+    console.log('🔌 Client disconnected:', socket.id, 'Reason:', reason)
+  })
+
+  socket.on('error', (error) => {
+    console.error('🔌 Socket error:', error)
+  })
+})
+
+// Socket.IO error handling
+io.engine.on('connection_error', (err) => {
+  console.error('🔌 Socket.IO connection error:', {
+    req: err.req,
+    code: err.code,
+    message: err.message,
+    context: err.context
   })
 })
 

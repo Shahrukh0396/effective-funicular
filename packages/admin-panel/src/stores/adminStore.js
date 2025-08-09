@@ -62,7 +62,7 @@ export const useAdminStore = defineStore('admin', () => {
       loadingDashboard.value = true
       error.value = null
       
-      const response = await axios.get('/api/admin/dashboard/analytics')
+      const response = await axios.get('/api/analytics/dashboard')
       dashboardAnalytics.value = response.data.data
       
       return { success: true, data: response.data.data }
@@ -79,12 +79,12 @@ export const useAdminStore = defineStore('admin', () => {
       loadingClients.value = true
       error.value = null
       
-      const response = await axios.get('/api/admin/analytics/clients')
+      const response = await axios.get('/api/analytics/users')
       clientAnalytics.value = response.data.data
       
       return { success: true, data: response.data.data }
     } catch (err) {
-      error.value = err.response?.data?.message || 'Failed to fetch client analytics'
+      error.value = err.response?.data?.message || 'Failed to fetch user analytics'
       return { success: false, error: error.value }
     } finally {
       loadingClients.value = false
@@ -96,10 +96,10 @@ export const useAdminStore = defineStore('admin', () => {
       loadingProjects.value = true
       error.value = null
       
-      const response = await axios.get('/api/projects')
-      projectAnalytics.value = response.data.data.projects
+      const response = await axios.get('/api/analytics/projects')
+      projectAnalytics.value = response.data.data
       
-      return { success: true, data: response.data.data.projects }
+      return { success: true, data: response.data.data }
     } catch (err) {
       error.value = err.response?.data?.message || 'Failed to fetch project analytics'
       return { success: false, error: error.value }
@@ -113,7 +113,7 @@ export const useAdminStore = defineStore('admin', () => {
       loadingBusiness.value = true
       error.value = null
       
-      const response = await axios.get('/api/admin/analytics/business')
+      const response = await axios.get('/api/analytics/revenue')
       businessAnalytics.value = response.data.data
       
       return { success: true, data: response.data.data }
@@ -131,9 +131,9 @@ export const useAdminStore = defineStore('admin', () => {
       error.value = null
       
       const response = await axios.get('/api/admin/employees')
-      employees.value = response.data.data
+      employees.value = response.data.data.employees
       
-      return { success: true, data: response.data.data }
+      return { success: true, data: response.data.data.employees }
     } catch (err) {
       error.value = err.response?.data?.message || 'Failed to fetch employees'
       return { success: false, error: error.value }
@@ -159,12 +159,121 @@ export const useAdminStore = defineStore('admin', () => {
     }
   }
 
+  const fetchAllTasks = async () => {
+    try {
+      loadingTasks.value = true
+      error.value = null
+      
+      const response = await axios.get('/api/tasks')
+      tasks.value = response.data.data.tasks || response.data.data
+      
+      return { success: true, data: response.data.data }
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Failed to fetch tasks'
+      return { success: false, error: error.value }
+    } finally {
+      loadingTasks.value = false
+    }
+  }
+
+  const assignTask = async (taskId, employeeId) => {
+    try {
+      error.value = null
+      
+      const response = await axios.put(`/api/tasks/${taskId}`, {
+        assignedTo: employeeId
+      })
+      
+      // Update the task in the local state
+      const taskIndex = tasks.value.findIndex(task => task._id === taskId)
+      if (taskIndex !== -1) {
+        tasks.value[taskIndex] = response.data.data.task
+      }
+      
+      return { success: true, data: response.data.data }
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Failed to assign task'
+      return { success: false, error: error.value }
+    }
+  }
+
+  const unassignTask = async (taskId) => {
+    try {
+      error.value = null
+      
+      const response = await axios.put(`/api/tasks/${taskId}`, {
+        assignedTo: null
+      })
+      
+      // Update the task in the local state
+      const taskIndex = tasks.value.findIndex(task => task._id === taskId)
+      if (taskIndex !== -1) {
+        tasks.value[taskIndex] = response.data.data.task
+      }
+      
+      return { success: true, data: response.data.data }
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Failed to unassign task'
+      return { success: false, error: error.value }
+    }
+  }
+
+  const createTask = async (taskData) => {
+    try {
+      error.value = null
+      
+      const response = await axios.post('/api/tasks', taskData)
+      
+      // Add the new task to the local state
+      tasks.value.push(response.data.data.task)
+      
+      return { success: true, data: response.data.data }
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Failed to create task'
+      return { success: false, error: error.value }
+    }
+  }
+
+  const fetchClients = async () => {
+    try {
+      loadingClients.value = true
+      error.value = null
+      
+      const response = await axios.get('/api/admin/clients')
+      clientAnalytics.value = response.data.data
+      
+      return { success: true, data: response.data.data }
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Failed to fetch clients'
+      return { success: false, error: error.value }
+    } finally {
+      loadingClients.value = false
+    }
+  }
+
+  const fetchProjects = async () => {
+    try {
+      loadingProjects.value = true
+      error.value = null
+      
+      const response = await axios.get('/api/admin/projects')
+      projectAnalytics.value = response.data.data
+      
+      return { success: true, data: response.data.data }
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Failed to fetch projects'
+      return { success: false, error: error.value }
+    } finally {
+      loadingProjects.value = false
+    }
+  }
+
   const fetchPerformanceOverview = async () => {
     try {
       loadingPerformance.value = true
       error.value = null
       
-      const response = await axios.get('/api/admin/analytics/performance')
+      const response = await axios.get('/api/analytics/vendor-performance')
       performanceOverview.value = response.data.data
       
       return { success: true, data: response.data.data }
@@ -181,10 +290,19 @@ export const useAdminStore = defineStore('admin', () => {
       loadingAttendance.value = true
       error.value = null
       
-      const response = await axios.get('/api/admin/analytics/attendance')
-      attendanceOverview.value = response.data.data
+      // TODO: Implement attendance analytics endpoint
+      // For now, return empty data structure
+      const mockData = {
+        totalEmployees: 0,
+        presentToday: 0,
+        absentToday: 0,
+        attendanceRate: 0,
+        recentAttendance: []
+      }
       
-      return { success: true, data: response.data.data }
+      attendanceOverview.value = mockData
+      
+      return { success: true, data: mockData }
     } catch (err) {
       error.value = err.response?.data?.message || 'Failed to fetch attendance overview'
       return { success: false, error: error.value }
@@ -239,7 +357,13 @@ export const useAdminStore = defineStore('admin', () => {
     fetchProjectAnalytics,
     fetchBusinessAnalytics,
     fetchEmployees,
+    fetchClients,
+    fetchProjects,
     fetchTasks,
+    fetchAllTasks,
+    assignTask,
+    unassignTask,
+    createTask,
     fetchPerformanceOverview,
     fetchAttendanceOverview,
     clearError

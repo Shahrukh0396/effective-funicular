@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import { useAuthStore } from './stores/auth'
 import LoadingSpinner from './components/common/LoadingSpinner.vue'
+import SupportButton from './components/SupportButton.vue'
 
 const authStore = useAuthStore()
 
@@ -14,6 +15,7 @@ onMounted(async () => {
   <div class="min-h-screen bg-gray-50">
     <template v-if="!authStore.loading">
       <router-view />
+      <SupportButton v-if="authStore.user" />
     </template>
     <template v-else>
       <div class="flex items-center justify-center min-h-screen">

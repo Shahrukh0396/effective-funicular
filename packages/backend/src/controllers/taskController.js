@@ -24,8 +24,8 @@ const getTasks = async (req, res) => {
     // Add vendor filtering
     if (req.vendorFilter) {
       Object.assign(filter, req.vendorFilter)
-    } else if (req.user && req.user.vendor) {
-      filter.vendor = req.user.vendor
+    } else if (req.user && req.user.vendorId) {
+      filter.vendor = req.user.vendorId
     }
     
     if (req.user.role === 'client') {
@@ -46,11 +46,16 @@ const getTasks = async (req, res) => {
     // Admin can see all tasks
 
     // Add additional filters
-    if (project) filter.project = project
+    if (project) {
+      filter.project = project
+      console.log('🔍 Task filter - Project ID:', project)
+    }
     if (status) filter.status = status
     if (priority) filter.priority = priority
     if (assignedTo) filter.assignedTo = assignedTo
     if (sprint) filter.sprint = sprint
+    
+    console.log('🔍 Final task filter:', filter)
 
     // Build sort object
     const sort = {}
@@ -67,6 +72,9 @@ const getTasks = async (req, res) => {
       .limit(parseInt(limit))
 
     const total = await Task.countDocuments(filter)
+    
+    console.log('🔍 Tasks found:', tasks.length)
+    console.log('🔍 Total tasks count:', total)
 
     res.json({
       success: true,
@@ -96,8 +104,8 @@ const getTaskById = async (req, res) => {
     const filter = { _id: req.params.id }
     if (req.vendorFilter) {
       Object.assign(filter, req.vendorFilter)
-    } else if (req.user && req.user.vendor) {
-      filter.vendor = req.user.vendor
+    } else if (req.user && req.user.vendorId) {
+      filter.vendor = req.user.vendorId
     }
     
     const task = await Task.findOne(filter)
@@ -217,12 +225,12 @@ const createTask = async (req, res) => {
     }
 
     // Set vendor for task
-    let taskVendor = req.user.vendor
+    let taskVendor = req.user.vendorId
     if (!taskVendor && req.user.role === 'super_admin') {
       // For super admin, get vendor from project
       const projectDoc = await Project.findById(project)
-      if (projectDoc && projectDoc.vendor) {
-        taskVendor = projectDoc.vendor
+      if (projectDoc && projectDoc.vendorId) {
+        taskVendor = projectDoc.vendorId
       }
     }
 

@@ -6,12 +6,14 @@
         <router-view></router-view>
       </div>
     </main>
+    <SupportButton v-if="authStore.isAuthenticated" />
   </div>
 </template>
 
 <script setup>
 import { useAuthStore } from './stores/authStore'
 import Navigation from './components/Navigation.vue'
+import SupportButton from './components/SupportButton.vue'
 
 const authStore = useAuthStore()
 </script> 

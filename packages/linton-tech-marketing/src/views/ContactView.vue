@@ -167,8 +167,8 @@
                   </div>
                   <div class="ml-4">
                     <h3 class="text-lg font-semibold text-gray-900">Phone</h3>
-                    <p class="text-gray-600">+1 (555) 123-4567</p>
-                    <p class="text-gray-600">Mon-Fri 9AM-6PM EST</p>
+                    <p class="text-gray-600">+1 (443) 625-4261</p>
+                    <p class="text-gray-600">Mon-Fri 10AM-7PM CST</p>
                   </div>
                 </div>
 
@@ -182,8 +182,8 @@
                   </div>
                   <div class="ml-4">
                     <h3 class="text-lg font-semibold text-gray-900">Email</h3>
-                    <p class="text-gray-600">hello@lintontech.com</p>
-                    <p class="text-gray-600">support@lintontech.com</p>
+                    <p class="text-gray-600">hello@linton-tech.com</p>
+                    <p class="text-gray-600">support@linton-tech.com</p>
                   </div>
                 </div>
 
@@ -198,8 +198,8 @@
                   </div>
                   <div class="ml-4">
                     <h3 class="text-lg font-semibold text-gray-900">Office</h3>
-                    <p class="text-gray-600">123 Tech Street</p>
-                    <p class="text-gray-600">San Francisco, CA 94105</p>
+                    <p class="text-gray-600">5900 Balcones Drive ste 100</p>
+                    <p class="text-gray-600">Austin, TX 78731</p>
                     <p class="text-gray-600">United States</p>
                   </div>
                 </div>
@@ -212,7 +212,7 @@
               <div class="space-y-2">
                 <div class="flex justify-between">
                   <span class="text-gray-600">Monday - Friday</span>
-                  <span class="text-gray-900 font-medium">9:00 AM - 6:00 PM</span>
+                  <span class="text-gray-900 font-medium">10:00 AM - 7:00 PM</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-gray-600">Saturday</span>
@@ -256,7 +256,7 @@
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="text-center mb-12">
           <h2 class="text-3xl font-bold text-gray-900 mb-4">Find Us</h2>
-          <p class="text-xl text-gray-600">Visit our office in San Francisco</p>
+          <p class="text-xl text-gray-600">Visit our office in Austin, TX</p>
         </div>
         <div class="bg-gray-200 rounded-xl h-96 flex items-center justify-center">
           <div class="text-center">
@@ -265,7 +265,7 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
             </svg>
             <p class="text-gray-600">Interactive map would be embedded here</p>
-            <p class="text-sm text-gray-500">123 Tech Street, San Francisco, CA 94105</p>
+            <p class="text-sm text-gray-500">5900 Balcones Drive ste 100, Austin, TX 78731</p>
           </div>
         </div>
       </div>

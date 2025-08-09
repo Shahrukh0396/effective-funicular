@@ -12,20 +12,11 @@ const auditLogSchema = new mongoose.Schema({
       'user.login.locked',
       'user.logout.success',
       'user.logout.timeout',
-      'user.logout.forced',
-      
-      // User management events
-      'user.created',
-      'user.updated',
-      'user.deleted',
-      'user.activated',
-      'user.deactivated',
       
       // Password events
       'user.password.change',
       'user.password.reset',
       'user.password.reset.request',
-      'user.password.expired',
       
       // MFA events
       'user.mfa.enable',
@@ -37,7 +28,6 @@ const auditLogSchema = new mongoose.Schema({
       'user.session.create',
       'user.session.destroy',
       'user.session.timeout',
-      'user.session.invalidate',
       
       // Security events
       'security.suspicious.activity',
@@ -45,6 +35,12 @@ const auditLogSchema = new mongoose.Schema({
       'security.token.compromise',
       'security.account.locked',
       'security.account.unlocked',
+      
+      // IP restriction events
+      'security.ip.whitelisted',
+      'security.ip.whitelist_removed',
+      'security.ip.blocked',
+      'security.ip.unblocked',
       
       // Portal access events
       'portal.access.granted',
@@ -54,7 +50,8 @@ const auditLogSchema = new mongoose.Schema({
       // Vendor events
       'vendor.access.granted',
       'vendor.access.denied',
-      'vendor.context.detected'
+      'vendor.context.detected',
+      'system.event'
     ]
   },
   
@@ -64,7 +61,10 @@ const auditLogSchema = new mongoose.Schema({
     ref: 'User',
     required: function() {
       // userId is not required for failed login events where user doesn't exist
-      return this.event !== 'user.login.failed'
+      // or for system-level events
+      return this.event !== 'user.login.failed' && 
+             !this.event.includes('security.ip.') &&
+             !this.event.includes('system.')
     }
   },
   vendorId: {
@@ -72,14 +72,19 @@ const auditLogSchema = new mongoose.Schema({
     ref: 'Vendor',
     required: function() {
       // vendorId is not required for failed login events where user doesn't exist
-      return this.event !== 'user.login.failed'
+      // or for super admin users who don't belong to a specific vendor
+      // or for system-level events
+      return this.event !== 'user.login.failed' && 
+             !this.event.includes('mfa') && 
+             !this.event.includes('security') &&
+             !this.event.includes('system.')
     }
   },
   
   // Portal context
   portalType: {
     type: String,
-    enum: ['client', 'employee', 'admin', 'super_admin'],
+    enum: ['client', 'employee', 'admin', 'super_admin', 'system'],
     required: true
   },
   

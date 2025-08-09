@@ -2,6 +2,9 @@ import axios from 'axios'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/'
 
+console.log('🔍 API_BASE_URL:', API_BASE_URL)
+console.log('🔍 VITE_API_URL:', import.meta.env.VITE_API_URL)
+
 // Create axios instance with auth headers
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -24,13 +27,66 @@ const chatService = {
   async getConversations() {
     try {
       const response = await api.get('api/chat/conversations')
-      return response
+      return response.data
     } catch (error) {
       console.error('Error fetching conversations:', error)
-      // Return demo conversations if API fails
       return {
         data: []
       }
+    }
+  },
+
+  // Get default channels
+  async getDefaultChannels() {
+    try {
+      const response = await api.get('api/chat/channels')
+      return response.data
+    } catch (error) {
+      console.error('Error fetching channels:', error)
+      throw error
+    }
+  },
+
+  // Join a channel
+  async joinChannel(conversationId) {
+    try {
+      const response = await api.post(`api/chat/conversations/${conversationId}/join`)
+      return response.data
+    } catch (error) {
+      console.error('Error joining channel:', error)
+      throw error
+    }
+  },
+
+  // Add members to private channel
+  async addChannelMembers(conversationId, userIds) {
+    try {
+      const response = await api.post(`api/chat/conversations/${conversationId}/members`, {
+        userIds
+      })
+      return response.data
+    } catch (error) {
+      console.error('Error adding channel members:', error)
+      throw error
+    }
+  },
+
+  // Create or get support conversation
+  async createSupportConversation(message = null) {
+    try {
+      console.log('🔍 Creating support conversation with message:', message)
+      console.log('🔍 Auth token:', !!localStorage.getItem('token'))
+      console.log('🔍 Full URL will be:', API_BASE_URL + 'api/chat/support')
+      
+      const response = await api.post('api/chat/support', {
+        message
+      })
+      console.log('🔍 Support conversation response:', response)
+      return response.data
+    } catch (error) {
+      console.error('Error creating support conversation:', error)
+      console.error('🔍 Error details:', error.config?.url)
+      throw error
     }
   },
 
@@ -38,7 +94,7 @@ const chatService = {
   async getMessages(conversationId) {
     try {
       const response = await api.get(`api/chat/conversations/${conversationId}/messages`)
-      return response
+      return response.data
     } catch (error) {
       console.error('Error fetching messages:', error)
       throw error
@@ -62,7 +118,7 @@ const chatService = {
   // Send a file message
   async sendFileMessage(formData) {
     try {
-      const response = await api.post('api/chat/messages/file', formData, {
+      const response = await api.post('api/chat/messages/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -103,6 +159,77 @@ const chatService = {
     }
   },
 
+  // Create a channel
+  async createChannel({ name, channelType, purpose, topic, isPublic = true, participantIds = [] }) {
+    try {
+      const response = await api.post('api/chat/conversations', {
+        type: 'channel',
+        name,
+        channelType,
+        purpose,
+        topic,
+        isPublic,
+        participantIds
+      })
+      return response
+    } catch (error) {
+      console.error('Error creating channel:', error)
+      throw error
+    }
+  },
+
+  // Search messages
+  async searchMessages(query, conversationId = null) {
+    try {
+      const params = { q: query }
+      if (conversationId) {
+        params.conversationId = conversationId
+      }
+      const response = await api.get('api/chat/search', { params })
+      return response.data
+    } catch (error) {
+      console.error('Error searching messages:', error)
+      throw error
+    }
+  },
+
+  // Add reaction to message
+  async addReaction(messageId, emoji) {
+    try {
+      const response = await api.post(`api/chat/messages/${messageId}/reactions`, {
+        emoji
+      })
+      return response.data
+    } catch (error) {
+      console.error('Error adding reaction:', error)
+      throw error
+    }
+  },
+
+  // Edit message
+  async editMessage(messageId, content) {
+    try {
+      const response = await api.put(`api/chat/messages/${messageId}`, {
+        content
+      })
+      return response.data
+    } catch (error) {
+      console.error('Error editing message:', error)
+      throw error
+    }
+  },
+
+  // Delete message
+  async deleteMessage(messageId) {
+    try {
+      const response = await api.delete(`api/chat/messages/${messageId}`)
+      return response.data
+    } catch (error) {
+      console.error('Error deleting message:', error)
+      throw error
+    }
+  },
+
   // Mark messages as read
   async markAsRead(conversationId) {
     try {
@@ -114,35 +241,11 @@ const chatService = {
     }
   },
 
-  // Delete a message
-  async deleteMessage(messageId) {
-    try {
-      const response = await api.delete(`api/chat/messages/${messageId}`)
-      return response
-    } catch (error) {
-      console.error('Error deleting message:', error)
-      throw error
-    }
-  },
-
-  // Edit a message
-  async editMessage(messageId, content) {
-    try {
-      const response = await api.put(`api/chat/messages/${messageId}`, {
-        content
-      })
-      return response
-    } catch (error) {
-      console.error('Error editing message:', error)
-      throw error
-    }
-  },
-
   // Get available users for new conversations
   async getAvailableUsers() {
     try {
       const response = await api.get('api/chat/users')
-      return response
+      return response.data
     } catch (error) {
       console.error('Error fetching available users:', error)
       throw error
@@ -167,19 +270,6 @@ const chatService = {
       return response
     } catch (error) {
       console.error('Error fetching conversation details:', error)
-      throw error
-    }
-  },
-
-  // Search conversations
-  async searchConversations(query) {
-    try {
-      const response = await api.get('api/chat/conversations/search', {
-        params: { q: query }
-      })
-      return response
-    } catch (error) {
-      console.error('Error searching conversations:', error)
       throw error
     }
   },

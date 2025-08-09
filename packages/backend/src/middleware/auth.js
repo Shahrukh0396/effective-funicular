@@ -62,14 +62,14 @@ const auth = async (req, res, next) => {
     // Add user and session to request object
     req.user = user
     req.session = session
-    req.vendorId = decoded.vendorId || user.vendor
+    req.vendorId = decoded.vendorId || user.vendorId
     req.portalType = decoded.portalType || 'client'
 
     // Log activity (async, don't wait)
     authService.logAuthEvent({
       event: 'portal.access.granted',
       userId: user._id,
-      vendorId: decoded.vendorId || user.vendor,
+      vendorId: decoded.vendorId || user.vendorId,
       portalType: decoded.portalType || 'client',
       sessionId: session.sessionId,
       request: {
@@ -108,6 +108,97 @@ const auth = async (req, res, next) => {
   }
 }
 
+// Simple employee authentication middleware (no session required)
+const employeeAuth = async (req, res, next) => {
+  console.log('🔐 Employee auth middleware called - START')
+  
+  try {
+    // Get token from header
+    const token = req.header('Authorization')?.replace('Bearer ', '')
+    console.log('🔐 Token check:', !!token)
+    
+    if (!token) {
+      console.log('❌ No token provided')
+      return res.status(401).json({
+        success: false,
+        message: 'Access denied. No token provided.'
+      })
+    }
+    
+    console.log('🔐 Token received, length:', token.length)
+    
+    // Verify token directly without session
+    const jwt = require('jsonwebtoken')
+    const config = require('../config')
+    
+    console.log('🔐 About to verify token')
+    const decoded = jwt.verify(token, config.jwtSecret)
+    console.log('🔐 Token decoded successfully:', { userId: decoded.userId, role: decoded.role })
+    
+    // Find user
+    console.log('🔐 About to find user')
+    const user = await User.findById(decoded.userId).select('-password')
+    
+    if (!user) {
+      console.log('❌ User not found')
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token. User not found.'
+      })
+    }
+    
+    console.log('✅ User found:', user.email, 'Role:', user.role)
+    
+    // Check if user is active
+    if (!user.isActive) {
+      console.log('❌ User account deactivated')
+      return res.status(401).json({
+        success: false,
+        message: 'Account is deactivated. Please contact support.'
+      })
+    }
+
+    // Check if account is locked
+    if (user.security?.accountLockedUntil && new Date() < user.security.accountLockedUntil) {
+      console.log('❌ User account locked')
+      return res.status(401).json({
+        success: false,
+        message: 'Account is temporarily locked due to multiple failed login attempts.'
+      })
+    }
+
+    // Add user to request object
+    req.user = user
+    req.vendorId = decoded.vendorId || user.vendorId
+    req.portalType = decoded.portalType || 'employee'
+
+    console.log('✅ Employee auth successful, proceeding to route')
+    next()
+  } catch (error) {
+    console.error('❌ Employee auth middleware error:', error.message)
+    console.error('❌ Error stack:', error.stack)
+    
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token.'
+      })
+    }
+    
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Token expired. Please refresh your token.'
+      })
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Server error during authentication.'
+    })
+  }
+}
+
 // Role-based authorization middleware
 const authorize = (...roles) => {
   return (req, res, next) => {
@@ -121,27 +212,30 @@ const authorize = (...roles) => {
     // Flatten the roles array in case it's nested
     const flatRoles = roles.flat()
     
-    // Debug logging (can be removed in production)
-    // console.log('🔍 Authorize middleware - User:', {
-    //   email: req.user.email,
-    //   role: req.user.role,
-    //   isSuperAccount: req.user.isSuperAccount,
-    //   isActive: req.user.isActive
-    // })
-    // console.log('🔍 Authorize middleware - Allowed roles:', flatRoles)
+    console.log('🔍 Authorize middleware - User:', {
+      email: req.user.email,
+      role: req.user.role,
+      isSuperAccount: req.user.isSuperAccount,
+      isActive: req.user.isActive
+    })
+    console.log('🔍 Authorize middleware - Allowed roles:', flatRoles)
+    console.log('🔍 Authorize middleware - User role included:', flatRoles.includes(req.user.role))
     
     // Super accounts have access to all roles
     if (req.user.role === 'super_admin' || req.user.isSuperAccount) {
+      console.log('🔍 Authorize middleware - Super account access granted')
       return next()
     }
     
     if (!flatRoles.includes(req.user.role)) {
+      console.log('🔍 Authorize middleware - Access denied, role not included')
       return res.status(403).json({
         success: false,
         message: 'Access denied. Insufficient permissions.'
       })
     }
     
+    console.log('🔍 Authorize middleware - Access granted')
     next()
   }
 }
@@ -258,7 +352,7 @@ const employeeOrAdmin = (req, res, next) => {
     })
   }
   
-  if (!['employee', 'admin', 'super_admin'].includes(req.user.role)) {
+  if (!['employee', 'vendor_admin', 'super_admin'].includes(req.user.role)) {
     return res.status(403).json({
       success: false,
       message: 'Access denied. Employee, admin, or super admin access only.'
@@ -329,5 +423,6 @@ module.exports = {
   clientOnly,
   employeeOrAdmin,
   superAdminOnly,
-  validateSession
+  validateSession,
+  employeeAuth
 } 

@@ -17,7 +17,7 @@ module.exports = {
   // Token configuration
   tokens: {
     accessToken: {
-      expiresIn: process.env.ACCESS_TOKEN_EXPIRES_IN || '15m',
+      expiresIn: process.env.ACCESS_TOKEN_EXPIRES_IN || '1h', // Increased from 15m to 1h
       algorithm: 'HS256',
       issuer: 'linton-tech-platform'
     },

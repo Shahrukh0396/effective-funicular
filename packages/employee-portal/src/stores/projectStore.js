@@ -45,8 +45,20 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
+      console.log('🔍 Project Store - Fetching projects...')
       const response = await projectService.fetchProjects(filters)
-      projects.value = response.data || response
+      console.log('🔍 Project Store - Response received:', response)
+      console.log('🔍 Project Store - Response.data:', response.data)
+      console.log('🔍 Project Store - Response.data length:', response.data?.length)
+      
+      if (response.success && response.data) {
+        projects.value = response.data
+        console.log('🔍 Project Store - Projects set from response.data:', projects.value)
+      } else {
+        projects.value = response // Handle direct array response
+        console.log('🔍 Project Store - Projects set from response:', projects.value)
+      }
+      console.log('🔍 Project Store - Projects length:', projects.value?.length)
     } catch (err) {
       error.value = 'Failed to fetch projects'
       console.error('Error fetching projects:', err)
@@ -60,7 +72,11 @@ export const useProjectStore = defineStore('projects', () => {
     error.value = null
     try {
       const response = await projectService.getProjectById(projectId)
-      currentProject.value = response.data || response
+      if (response.success && response.data) {
+        currentProject.value = response.data
+      } else {
+        currentProject.value = response // Handle direct object response
+      }
       if (!currentProject.value) {
         error.value = 'Project not found'
       }

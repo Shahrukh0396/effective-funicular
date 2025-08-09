@@ -41,6 +41,22 @@ router.get('/dashboard', async (req, res) => {
     const { period = '30d' } = req.query
     const { user, vendorId } = req
 
+    // Debug logging
+    console.log('Analytics dashboard request:', {
+      user: user?._id,
+      vendorId,
+      userRole: user?.role,
+      isSuperAccount: user?.isSuperAccount
+    })
+
+    // Validate required fields
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      })
+    }
+
     // Calculate date range
     const endDate = new Date()
     const startDate = new Date()
@@ -172,9 +188,28 @@ router.get('/dashboard', async (req, res) => {
     })
   } catch (error) {
     console.error('Dashboard analytics error:', error)
+    
+    // More specific error handling
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        details: error.message
+      })
+    }
+    
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid data format',
+        details: error.message
+      })
+    }
+    
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     })
   }
 })
@@ -655,15 +690,15 @@ router.get('/vendor-performance', authorize(['super_admin']), async (req, res) =
       }
 
       // Get vendor's users
-      const users = await User.find({ vendor: vendorId })
+      const users = await User.find({ vendorId: vendor._id })
       const activeUsers = users.filter(user => user.isActive).length
 
       // Get vendor's projects
-      const projects = await Project.find({ vendor: vendorId })
+      const projects = await Project.find({ vendorId: vendor._id })
       const activeProjects = projects.filter(project => project.status === 'active').length
 
       // Get vendor's tasks
-      const tasks = await Task.find({ vendor: vendorId })
+      const tasks = await Task.find({ vendorId: vendor._id })
       const completedTasks = tasks.filter(task => task.status === 'done').length
 
       const vendorPerformance = {
@@ -693,9 +728,9 @@ router.get('/vendor-performance', authorize(['super_admin']), async (req, res) =
       // All vendors performance
       const vendors = await Vendor.find()
       const vendorPerformance = await Promise.all(vendors.map(async (vendor) => {
-        const users = await User.find({ vendor: vendor._id })
-        const projects = await Project.find({ vendor: vendor._id })
-        const tasks = await Task.find({ vendor: vendor._id })
+        const users = await User.find({ vendorId: vendor._id })
+        const projects = await Project.find({ vendorId: vendor._id })
+        const tasks = await Task.find({ vendorId: vendor._id })
 
         const activeUsers = users.filter(user => user.isActive).length
         const activeProjects = projects.filter(project => project.status === 'active').length

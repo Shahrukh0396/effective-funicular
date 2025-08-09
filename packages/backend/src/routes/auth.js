@@ -15,7 +15,8 @@ const router = express.Router()
 // Rate limiting for authentication
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'test' ? 1000 : 5, // Higher limit for tests
+  max: process.env.NODE_ENV === 'test' ? 1000 : 
+       process.env.NODE_ENV === 'development' ? 50 : 5, // More lenient for development
   message: {
     success: false,
     message: 'Too many login attempts. Please try again later.'
@@ -31,7 +32,7 @@ const setStartTime = (req, res, next) => {
 // Enhanced login endpoint
 router.post('/login', setStartTime, authLimiter, async (req, res) => {
   try {
-    const { email, password, vendorDomain } = req.body
+    const { email, password, vendorDomain, mfaToken, mfaMethod = 'totp' } = req.body
 
     // Validate required fields
     if (!email || !password) {
@@ -61,28 +62,58 @@ router.post('/login', setStartTime, authLimiter, async (req, res) => {
       })
     }
 
-    // Check if account is locked
-    if (user.security?.accountLockedUntil && new Date() < user.security.accountLockedUntil) {
-      return res.status(401).json({
-        success: false,
-        message: 'Account is temporarily locked due to multiple failed login attempts.'
-      })
+    // NEW: Enhanced security validation
+    const requestInfo = {
+      userAgent: req.get('User-Agent'),
+      ipAddress: req.ip,
+      location: req.headers['x-forwarded-for'] || req.connection.remoteAddress,
+      screenResolution: req.headers['x-screen-resolution'],
+      timezone: req.headers['x-timezone'],
+      language: req.headers['accept-language']
     }
 
-    // Check if password is expired
-    if (user.security?.passwordExpiresAt && new Date() > user.security.passwordExpiresAt) {
-      await logFailedLogin(email, req, 'Password expired')
-      return res.status(401).json({
-        success: false,
-        message: 'Password has expired. Please reset your password.'
-      })
+    const securityValidation = await authService.validateUserSecurity(user, requestInfo)
+    
+    if (!securityValidation.isValid) {
+      const issue = securityValidation.issues[0]
+      
+      if (issue.type === 'account_locked') {
+        return res.status(401).json({
+          success: false,
+          message: issue.message,
+          unlockTime: issue.unlockTime
+        })
+      }
+      
+      if (issue.type === 'password_expired') {
+        return res.status(401).json({
+          success: false,
+          message: issue.message,
+          requiresPasswordReset: true
+        })
+      }
+      
+      if (issue.type === 'suspicious_activity') {
+        return res.status(401).json({
+          success: false,
+          message: issue.message,
+          requiresMFA: true
+        })
+      }
+      
+      if (issue.type === 'ip_not_whitelisted') {
+        return res.status(403).json({
+          success: false,
+          message: issue.message
+        })
+      }
     }
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password)
     
     if (!isPasswordValid) {
-      await handleFailedLogin(user, req)
+      await authService.handleFailedLogin(user, requestInfo)
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials.'
@@ -153,14 +184,59 @@ router.post('/login', setStartTime, authLimiter, async (req, res) => {
       })
     }
 
-    // Get request information
-    const requestInfo = {
-      userAgent: req.get('User-Agent'),
-      ipAddress: req.ip,
-      location: req.headers['x-forwarded-for'] || req.connection.remoteAddress,
-      screenResolution: req.headers['x-screen-resolution'],
-      timezone: req.headers['x-timezone'],
-      language: req.headers['accept-language']
+    // NEW: Check MFA requirements
+    const mfaSetupInfo = await authService.getMFASetupInfo(user, requestedPortalType)
+    
+    // If MFA is required but not configured, return setup info
+    if (mfaSetupInfo.status === 'not_configured' && mfaSetupInfo.required) {
+      return res.status(401).json({
+        success: false,
+        message: 'MFA is required for this account. Please setup MFA first.',
+        requiresMFASetup: true,
+        mfaStatus: mfaSetupInfo
+      })
+    }
+
+    // If MFA is configured but not enabled, require completion
+    if (mfaSetupInfo.status === 'configured_not_enabled') {
+      return res.status(401).json({
+        success: false,
+        message: 'MFA setup is incomplete. Please complete MFA setup.',
+        requiresMFACompletion: true,
+        mfaStatus: mfaSetupInfo
+      })
+    }
+
+    // If MFA is enabled, check if MFA token is provided
+    if (mfaSetupInfo.status === 'enabled' && mfaSetupInfo.required) {
+      if (!mfaToken) {
+        return res.status(401).json({
+          success: false,
+          message: 'MFA token is required for this account.',
+          requiresMFA: true,
+          mfaMethod: 'totp'
+        })
+      }
+      
+      // Validate MFA token
+      try {
+        const mfaValidation = await authService.validateMFAForLogin(user, requestedPortalType, mfaToken, 'auto')
+        if (!mfaValidation.valid) {
+          return res.status(401).json({
+            success: false,
+            message: mfaValidation.error,
+            requiresMFA: true,
+            mfaMethod: mfaValidation.method || 'totp'
+          })
+        }
+      } catch (error) {
+        return res.status(401).json({
+          success: false,
+          message: error.message,
+          requiresMFA: true,
+          mfaMethod: 'totp'
+        })
+      }
     }
 
     // Generate tokens
@@ -170,6 +246,7 @@ router.post('/login', setStartTime, authLimiter, async (req, res) => {
       refreshToken = authService.generateRefreshToken(user, vendor, requestedPortalType)
 
       // Create session
+      console.log('🔐 About to create session for user:', user.email)
       session = await authService.createSession(
         user, 
         vendor, 
@@ -178,6 +255,12 @@ router.post('/login', setStartTime, authLimiter, async (req, res) => {
         refreshToken, 
         requestInfo
       )
+      console.log('🔐 Session created in login route:', {
+        sessionId: session.sessionId,
+        userId: session.user,
+        vendorId: session.vendor,
+        isActive: session.isActive
+      })
     } catch (error) {
       console.error('Token/Session creation error:', error)
       return res.status(500).json({
@@ -186,89 +269,117 @@ router.post('/login', setStartTime, authLimiter, async (req, res) => {
       })
     }
 
-    // Reset failed login attempts
-    if (user.security?.failedAttempts > 0) {
-      user.security.failedAttempts = 0
-      user.security.accountLockedUntil = null
-      await user.save()
+    // Handle successful login
+    await authService.handleSuccessfulLogin(user, vendor, requestedPortalType, requestInfo, session)
+
+    // Prepare response
+    const userResponse = {
+      id: user._id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      permissions: user.permissions,
+      isSuperAccount: user.isSuperAccount,
+      vendor: {
+        id: vendor._id,
+        name: vendor.name,
+        domain: vendor.domain
+      },
+      portalType: requestedPortalType,
+      security: {
+        riskScore: securityValidation.riskScore,
+        suspiciousActivity: securityValidation.riskScore > 0.7,
+        mfaEnabled: user.security.mfaEnabled,
+        passwordExpiresAt: user.security.passwordExpiresAt
+      }
     }
 
-    // Log successful login
-    try {
-      await authService.logAuthEvent({
-        event: 'user.login.success',
-        userId: user._id,
-        vendorId: vendor._id,
-        portalType: requestedPortalType,
-        sessionId: session.sessionId,
-        request: {
-          ipAddress: requestInfo.ipAddress,
-          userAgent: requestInfo.userAgent,
-          method: req.method,
-          url: req.originalUrl
-        },
-        location: {
-          country: requestInfo.location,
-          timezone: requestInfo.timezone
-        },
-        device: {
-          type: authService.detectDeviceType(requestInfo.userAgent),
-          browser: authService.detectBrowser(requestInfo.userAgent),
-          os: authService.detectOS(requestInfo.userAgent),
-          screenResolution: requestInfo.screenResolution
-        },
-        security: {
-          riskScore: 0,
-          suspiciousActivity: false,
-          mfaUsed: false,
-          loginMethod: 'email_password',
-          failedAttempts: 0
-        },
-        metadata: {
-          success: true,
-          duration: req.startTime ? Date.now() - req.startTime : 0
-        }
-      })
-    } catch (error) {
-      console.error('Audit logging error:', error)
-      // Don't fail the login for audit logging errors
-    }
-
-    // Return response
     res.json({
       success: true,
       message: 'Login successful.',
       data: {
-        user: {
-          id: user._id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          role: user.role,
-          permissions: user.permissions,
-          isSuperAccount: user.isSuperAccount
-        },
-        vendor: {
-          id: vendor._id,
-          name: vendor.name,
-          domain: vendor.domain
+        user: userResponse,
+        tokens: {
+          accessToken,
+          refreshToken
         },
         session: {
           id: session.sessionId,
-          portalType: requestedPortalType
+          expiresAt: new Date(Date.now() + (15 * 60 * 1000)) // 15 minutes
         },
-        accessToken,
-        refreshToken,
-        expiresIn: config.tokens.accessToken.expiresIn
+        mfa: {
+          required: mfaSetupInfo.required,
+          enabled: user.security.mfaEnabled,
+          verified: true
+        }
       }
     })
 
   } catch (error) {
-    console.error('❌ Login error:', error)
-    console.error('❌ Error stack:', error.stack)
+    console.error('Login error:', error)
     res.status(500).json({
       success: false,
       message: 'Server error during login.'
+    })
+  }
+})
+
+// Refresh token endpoint
+router.post('/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.body
+    
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Refresh token is required.'
+      })
+    }
+
+    const decoded = await authService.verifyRefreshToken(refreshToken)
+    const user = await User.findById(decoded.userId)
+    const vendor = await Vendor.findById(decoded.vendorId)
+    
+    if (!user || !vendor) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid refresh token. User or vendor not found.'
+      })
+    }
+
+    if (!user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'Account is deactivated.'
+      })
+    }
+
+    // Generate new tokens
+    const newAccessToken = authService.generateAccessToken(user, vendor, decoded.portalType)
+    const newRefreshToken = authService.generateRefreshToken(user, vendor, decoded.portalType)
+
+    // Update session
+    const session = await Session.findByToken(refreshToken, 'refreshToken')
+    if (session) {
+      session.accessToken = newAccessToken
+      session.refreshToken = newRefreshToken
+      session.lastActivity = new Date()
+      await session.save()
+    }
+
+    res.json({
+      success: true,
+      data: {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken
+      }
+    })
+  } catch (error) {
+    console.error('Token refresh error:', error)
+    res.status(401).json({
+      success: false,
+      message: 'Invalid refresh token.'
     })
   }
 })
@@ -290,6 +401,33 @@ router.post('/logout', async (req, res) => {
   }
 })
 
+// Debug endpoint to check sessions
+router.get('/debug-sessions', async (req, res) => {
+  try {
+    const Session = require('../models/Session')
+    const sessions = await Session.find({ isActive: true }).limit(10)
+    res.json({
+      success: true,
+      data: {
+        totalSessions: sessions.length,
+        sessions: sessions.map(s => ({
+          sessionId: s.sessionId,
+          userId: s.user,
+          vendorId: s.vendor,
+          isActive: s.isActive,
+          createdAt: s.createdAt
+        }))
+      }
+    })
+  } catch (error) {
+    console.error('Debug sessions error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    })
+  }
+})
+
 // Get current user
 router.get('/me', async (req, res) => {
   try {
@@ -302,7 +440,8 @@ router.get('/me', async (req, res) => {
       })
     }
 
-    const decoded = require('jsonwebtoken').verify(token, config.jwtSecret)
+    // Use auth service to verify token (includes session validation)
+    const decoded = await authService.verifyAccessToken(token)
     const user = await User.findById(decoded.userId).select('-password')
     
     if (!user) {
@@ -334,24 +473,17 @@ router.get('/me', async (req, res) => {
       }
     })
   } catch (error) {
-    if (error.name === 'JsonWebTokenError') {
+    if (error.message === 'Invalid access token') {
       return res.status(401).json({
         success: false,
         message: 'Invalid token.'
       })
     }
     
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Token expired.'
-      })
-    }
-    
-    console.error('Auth error:', error)
+    console.error('Auth me error:', error)
     res.status(500).json({
       success: false,
-      message: 'Server error.'
+      message: 'Server error during authentication.'
     })
   }
 })

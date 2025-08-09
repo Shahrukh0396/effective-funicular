@@ -2,8 +2,23 @@
   <div class="sprints-container">
     <!-- Header -->
     <div class="header">
-      <h1 class="text-3xl font-bold text-gray-900">Sprint Overview</h1>
-      <p class="text-gray-600 mt-2">Track progress and milestones for your projects</p>
+      <div class="header-content">
+        <div>
+          <h1 class="text-3xl font-bold text-gray-900">Sprint Overview</h1>
+          <p class="text-gray-600 mt-2">Track progress and milestones for your projects</p>
+        </div>
+        <div class="view-toggle">
+          <router-link 
+            to="/dashboard/kanban" 
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+            </svg>
+            View Kanban Board
+          </router-link>
+        </div>
+      </div>
     </div>
 
     <!-- Sprint Filters -->
@@ -389,6 +404,14 @@ onMounted(async () => {
 
 .header {
   @apply mb-6;
+}
+
+.header-content {
+  @apply flex items-center justify-between;
+}
+
+.view-toggle {
+  @apply flex-shrink-0;
 }
 
 .filters {
