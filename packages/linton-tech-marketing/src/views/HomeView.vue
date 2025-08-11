@@ -344,7 +344,6 @@ const scrollToSection = (sectionId, event) => {
     event.preventDefault()
   }
   
-  console.log('Scrolling to section:', sectionId)
   const element = document.getElementById(sectionId)
   if (element) {
     // Account for sticky header height
