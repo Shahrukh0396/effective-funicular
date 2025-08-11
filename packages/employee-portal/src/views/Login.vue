@@ -65,9 +65,14 @@ const email = ref('')
 const password = ref('')
 
 const handleSubmit = async () => {
+  console.log('🔐 Employee Login: Starting login process...')
   const success = await authStore.login(email.value, password.value)
+  console.log('🔐 Employee Login: Login result:', success)
   if (success) {
-    router.push('/')
+    console.log('🔐 Employee Login: Login successful, redirecting to /home...')
+    router.push('/home')
+  } else {
+    console.log('🔐 Employee Login: Login failed, staying on login page')
   }
 }
 </script> 

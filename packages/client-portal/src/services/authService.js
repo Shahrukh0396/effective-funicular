@@ -5,15 +5,30 @@ const user = ref(null)
 const token = ref(localStorage.getItem('token'))
 const isAuthenticated = ref(!!token.value)
 
+// Sync token from localStorage
+const syncTokenFromStorage = () => {
+  const storedToken = localStorage.getItem('token')
+  if (storedToken && !token.value) {
+    console.log('🔐 Syncing token from localStorage')
+    token.value = storedToken
+    isAuthenticated.value = true
+  }
+}
+
 // Set auth token
 const setToken = (newToken) => {
+  console.log('🔐 setToken called with:', newToken ? 'Token present' : 'No token')
   token.value = newToken
   isAuthenticated.value = !!newToken
   if (newToken) {
     localStorage.setItem('token', newToken)
+    console.log('🔐 Token saved to localStorage')
   } else {
     localStorage.removeItem('token')
+    console.log('🔐 Token removed from localStorage')
   }
+  console.log('🔐 Token value after set:', token.value ? 'Present' : 'Missing')
+  console.log('🔐 isAuthenticated:', isAuthenticated.value)
 }
 
 // Set user data
@@ -26,9 +41,25 @@ const getAuthHeaders = () => {
   const headers = {
     'Content-Type': 'application/json'
   }
-  if (token.value) {
-    headers.Authorization = `Bearer ${token.value}`
+  
+  // Sync token from localStorage first
+  syncTokenFromStorage()
+  
+  // Try to get token from multiple sources
+  let authToken = token.value || localStorage.getItem('token')
+  
+  console.log('🔐 Auth Debug - Token value:', token.value ? 'Present' : 'Missing')
+  console.log('🔐 Auth Debug - LocalStorage token:', localStorage.getItem('token'))
+  console.log('🔐 Auth Debug - Combined token:', authToken ? 'Present' : 'Missing')
+  
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`
+    console.log('🔐 Auth Debug - Authorization header set')
+  } else {
+    console.log('🔐 Auth Debug - No token available')
   }
+  
+  console.log('🔐 Auth Debug - Headers:', headers)
   return headers
 }
 
@@ -55,8 +86,18 @@ export const authService = {
       }
 
       if (data.success) {
-        setToken(data.data.token)
-        setUser(data.data.user)
+        // Handle new token structure with tokens object
+        let authToken = null
+        if (data.data.tokens && data.data.tokens.accessToken) {
+          authToken = data.data.tokens.accessToken
+        } else if (data.data.token) {
+          authToken = data.data.token
+        }
+        
+        if (authToken) {
+          setToken(authToken)
+          setUser(data.data.user)
+        }
       }
 
       return data
@@ -77,14 +118,35 @@ export const authService = {
       })
 
       const data = await response.json()
+      console.log('🔐 Login response:', data)
 
       if (!response.ok) {
         throw new Error(data.message || 'Login failed')
       }
 
       if (data.success) {
-        setToken(data.data.token)
-        setUser(data.data.user)
+        console.log('🔐 Login successful, setting token...')
+        
+        // Handle new token structure with tokens object
+        let authToken = null
+        if (data.data.tokens && data.data.tokens.accessToken) {
+          authToken = data.data.tokens.accessToken
+          console.log('🔐 Using accessToken from tokens object')
+        } else if (data.data.token) {
+          authToken = data.data.token
+          console.log('🔐 Using token from data.token')
+        }
+        
+        console.log('🔐 Token from response:', authToken ? 'Present' : 'Missing')
+        console.log('🔐 Full data structure:', JSON.stringify(data, null, 2))
+        
+        if (authToken) {
+          setToken(authToken)
+          setUser(data.data.user)
+          console.log('🔐 Token after setToken:', token.value ? 'Present' : 'Missing')
+        } else {
+          console.error('🔐 No token found in response')
+        }
       }
 
       return data

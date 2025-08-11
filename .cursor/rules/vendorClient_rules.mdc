@@ -1,0 +1,538 @@
+# Linton Client Portal - Client Portal
+# .cursorrules file for Client Portal implementation
+
+## Project Overview
+You are building the Client Portal for the Linton Client Portal - a vendor-specific interface where clients can track their projects, communicate with their assigned vendor, monitor progress, access documents, and manage billing. This portal is isolated per vendor for security and data privacy.
+
+## Technology Stack
+- Frontend: Vue.js 3 with Composition API, Pinia, Tailwind CSS
+- Backend: Node.js, Express.js, MongoDB with Mongoose
+- Real-time: Socket.io for live project updates
+- Authentication: JWT with client role verification
+- File Management: AWS S3 for document storage
+- Communication: Real-time messaging system
+- Notifications: Email and in-app notifications
+
+## Core Features to Implement
+
+### 1. Client Dashboard
+```vue
+<!-- ClientDashboard.vue -->
+- Project overview cards with status indicators
+- Recent project activities and updates
+- Upcoming milestones and deadlines
+- Quick access to active conversations
+- Document notifications and approvals
+- Time tracking summaries (if enabled)
+- Invoice and payment status
+- Vendor contact information
+```
+
+### 2. Project Management Interface
+```vue
+<!-- ProjectList.vue & ProjectDetails.vue -->
+- Complete project listing with search and filters
+- Detailed project view with timeline visualization
+- Milestone tracking and completion status
+- Task visibility (client-facing tasks only)
+- Progress reporting and analytics
+- Project document repository
+- Change request management
+- Project feedback and rating system
+```
+
+### 3. Communication Center
+```vue
+<!-- Messages.vue & CommunicationHub.vue -->
+- Real-time messaging with vendor team
+- Thread-based conversations per project
+- File sharing capabilities
+- Message history and search
+- Notification preferences
+- Video call scheduling integration
+- Meeting notes and summaries
+- Communication audit trail
+```
+
+### 4. Document Management
+```vue
+<!-- DocumentManager.vue -->
+- Centralized document repository
+- Version control for shared documents
+- Document approval workflows
+- Secure document sharing
+- Download and print capabilities
+- Document categorization and tagging
+- Search functionality
+- Access permissions management
+```
+
+### 5. Progress Tracking & Reporting
+```vue
+<!-- ProgressTracker.vue -->
+- Visual project progress indicators
+- Milestone completion tracking
+- Burndown charts and velocity reports
+- Time tracking visibility (if enabled)
+- Budget utilization reports
+- Quality assurance status
+- Testing and review phases
+- Delivery confirmations
+```
+
+### 6. Billing & Invoicing
+```vue
+<!-- Billing.vue -->
+- Invoice viewing and download
+- Payment history and receipts
+- Outstanding balance tracking
+- Payment method management
+- Billing dispute resolution
+- Cost breakdown by project phase
+- Budget alerts and notifications
+- Tax document access
+```
+
+### 7. Feedback & Reviews
+```vue
+<!-- FeedbackSystem.vue -->
+- Project satisfaction surveys
+- Vendor performance ratings
+- Service quality feedback
+- Testimonial submission
+- Issue reporting system
+- Suggestion box
+- Review history
+- Public review opt-in
+```
+
+### 8. Account Management
+```vue
+<!-- AccountSettings.vue -->
+- Profile information management
+- Notification preferences
+- Security settings and password change
+- Multi-user account management
+- Vendor relationship history
+- Data export requests
+- Account deactivation options
+- Privacy settings
+```
+
+## Database Schemas
+
+### ClientProjects Collection (Vendor-Specific)
+```javascript
+{
+  _id: ObjectId,
+  vendorId: ObjectId, // ensures vendor isolation
+  clientId: ObjectId,
+  name: String,
+  description: String,
+  type: String,
+  status: String, // 'planning', 'active', 'review', 'completed', 'on_hold'
+  priority: String,
+  budget: {
+    total: Number,
+    spent: Number,
+    remaining: Number,
+    currency: String
+  },
+  timeline: {
+    startDate: Date,
+    endDate: Date,
+    actualStartDate: Date,
+    actualEndDate: Date
+  },
+  milestones: [{
+    _id: ObjectId,
+    name: String,
+    description: String,
+    dueDate: Date,
+    status: String, // 'pending', 'in_progress', 'completed', 'overdue'
+    completedAt: Date,
+    clientApprovalRequired: Boolean,
+    clientApproved: Boolean,
+    clientApprovedAt: Date,
+    deliverables: [String]
+  }],
+  team: {
+    projectManager: ObjectId,
+    members: [ObjectId],
+    clientContacts: [ObjectId]
+  },
+  documents: [{
+    _id: ObjectId,
+    name: String,
+    url: String,
+    category: String, // 'contract', 'requirement', 'design', 'deliverable'
+    version: String,
+    uploadedBy: ObjectId,
+    uploadedAt: Date,
+    clientVisible: Boolean,
+    requiresApproval: Boolean,
+    approvedBy: ObjectId,
+    approvedAt: Date,
+    size: Number
+  }],
+  communications: [{
+    type: String, // 'message', 'meeting', 'call', 'email'
+    timestamp: Date,
+    participants: [ObjectId],
+    summary: String,
+    attachments: [String]
+  }],
+  feedback: {
+    overallRating: Number, // 1-5 stars
+    communicationRating: Number,
+    qualityRating: Number,
+    timelinessRating: Number,
+    comments: String,
+    submittedAt: Date
+  },
+  clientVisibleTasks: [{
+    taskId: ObjectId,
+    title: String,
+    status: String,
+    assignedTo: String, // team member name
+    dueDate: Date,
+    clientFacing: Boolean // only show if true
+  }],
+  changeRequests: [{
+    _id: ObjectId,
+    description: String,
+    impactAssessment: String,
+    timeImpact: Number, // days
+    budgetImpact: Number,
+    status: String, // 'pending', 'approved', 'rejected', 'implemented'
+    requestedAt: Date,
+    respondedAt: Date,
+    clientApproved: Boolean
+  }],
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+### ClientMessages Collection (Vendor-Specific)
+```javascript
+{
+  _id: ObjectId,
+  vendorId: ObjectId,
+  projectId: ObjectId,
+  threadId: ObjectId,
+  senderId: ObjectId,
+  recipientIds: [ObjectId],
+  content: String,
+  messageType: String, // 'text', 'file', 'system', 'milestone_update'
+  attachments: [{
+    name: String,
+    url: String,
+    size: Number,
+    type: String
+  }],
+  readBy: [{
+    userId: ObjectId,
+    readAt: Date
+  }],
+  replyTo: ObjectId, // parent message ID
+  priority: String, // 'normal', 'high', 'urgent'
+  tags: [String],
+  archived: Boolean,
+  createdAt: Date,
+  editedAt: Date
+}
+```
+
+### ClientInvoices Collection (Vendor-Specific)
+```javascript
+{
+  _id: ObjectId,
+  vendorId: ObjectId,
+  clientId: ObjectId,
+  projectId: ObjectId,
+  invoiceNumber: String,
+  status: String, // 'draft', 'sent', 'viewed', 'paid', 'overdue', 'disputed'
+  amount: {
+    subtotal: Number,
+    tax: Number,
+    total: Number,
+    currency: String
+  },
+  lineItems: [{
+    description: String,
+    quantity: Number,
+    rate: Number,
+    amount: Number,
+    category: String
+  }],
+  dates: {
+    issued: Date,
+    due: Date,
+    paid: Date,
+    lastReminder: Date
+  },
+  paymentMethod: String,
+  paymentReference: String,
+  notes: String,
+  dispute: {
+    reason: String,
+    status: String, // 'open', 'resolved'
+    submittedAt: Date,
+    resolvedAt: Date
+  },
+  downloadedAt: Date,
+  viewedAt: Date,
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+### ClientNotifications Collection (Vendor-Specific)
+```javascript
+{
+  _id: ObjectId,
+  vendorId: ObjectId,
+  clientId: ObjectId,
+  type: String, // 'project_update', 'milestone_completed', 'message', 'invoice', 'payment_due'
+  title: String,
+  content: String,
+  relatedId: ObjectId, // project, message, or invoice ID
+  relatedType: String, // 'project', 'message', 'invoice'
+  priority: String, // 'low', 'medium', 'high'
+  channels: [String], // 'in_app', 'email', 'sms'
+  read: Boolean,
+  readAt: Date,
+  actionRequired: Boolean,
+  actionUrl: String,
+  expiresAt: Date,
+  createdAt: Date
+}
+```
+
+## API Endpoints
+
+### Project Management
+```javascript
+// GET /api/client/projects - Get client's projects
+// GET /api/client/projects/:id - Get specific project details
+// POST /api/client/projects/:id/approve-milestone - Approve milestone
+// POST /api/client/projects/:id/request-change - Submit change request
+// GET /api/client/projects/:id/timeline - Get project timeline
+// POST /api/client/projects/:id/feedback - Submit project feedback
+// GET /api/client/projects/:id/documents - Get project documents
+// POST /api/client/projects/:id/documents/:docId/approve - Approve document
+```
+
+### Communication
+```javascript
+// GET /api/client/messages - Get all message threads
+// GET /api/client/messages/thread/:threadId - Get thread messages
+// POST /api/client/messages - Send new message
+// PUT /api/client/messages/:id/read - Mark message as read
+// POST /api/client/messages/thread/:threadId/archive - Archive thread
+// GET /api/client/messages/unread-count - Get unread message count
+```
+
+### Documents
+```javascript
+// GET /api/client/documents - Get all accessible documents
+// GET /api/client/documents/:id/download - Download document
+// POST /api/client/documents/:id/approve - Approve document
+// GET /api/client/documents/categories - Get document categories
+// POST /api/client/documents/upload - Upload client document
+```
+
+### Billing
+```javascript
+// GET /api/client/invoices - Get all invoices
+// GET /api/client/invoices/:id - Get specific invoice
+// GET /api/client/invoices/:id/download - Download invoice PDF
+// POST /api/client/invoices/:id/dispute - Dispute invoice
+// GET /api/client/billing/history - Get payment history
+// POST /api/client/billing/payment-method - Update payment method
+```
+
+### Account Management
+```javascript
+// GET /api/client/profile - Get client profile
+// PUT /api/client/profile - Update client profile
+// POST /api/client/change-password - Change password
+// GET /api/client/notifications - Get notifications
+// PUT /api/client/notifications/preferences - Update notification preferences
+// POST /api/client/data-export - Request data export
+```
+
+## Frontend Components Structure
+
+```
+src/
+├── pages/
+│   ├── ClientDashboard.vue
+│   ├── ProjectList.vue
+│   ├── ProjectDetails.vue
+│   ├── Messages.vue
+│   ├── DocumentManager.vue
+│   ├── ProgressTracker.vue
+│   ├── Billing.vue
+│   ├── FeedbackSystem.vue
+│   └── AccountSettings.vue
+├── components/
+│   ├── dashboard/
+│   │   ├── ProjectOverviewCard.vue
+│   │   ├── RecentActivity.vue
+│   │   ├── UpcomingMilestones.vue
+│   │   ├── QuickActions.vue
+│   │   └── NotificationCenter.vue
+│   ├── projects/
+│   │   ├── ProjectCard.vue
+│   │   ├── ProjectTimeline.vue
+│   │   ├── MilestoneTracker.vue
+│   │   ├── TaskList.vue
+│   │   ├── ProgressBar.vue
+│   │   ├── ChangeRequestForm.vue
+│   │   └── ProjectFeedbackForm.vue
+│   ├── communication/
+│   │   ├── MessageThread.vue
+│   │   ├── MessageInput.vue
+│   │   ├── MessageBubble.vue
+│   │   ├── FileUpload.vue
+│   │   ├── ThreadList.vue
+│   │   └── VideoCallButton.vue
+│   ├── documents/
+│   │   ├── DocumentList.vue
+│   │   ├── DocumentViewer.vue
+│   │   ├── DocumentCard.vue
+│   │   ├── ApprovalButton.vue
+│   │   ├── VersionHistory.vue
+│   │   └── DocumentSearch.vue
+│   ├── billing/
+│   │   ├── InvoiceList.vue
+│   │   ├── InvoiceDetails.vue
+│   │   ├── PaymentHistory.vue
+│   │   ├── DisputeForm.vue
+│   │   ├── PaymentMethodForm.vue
+│   │   └── BudgetTracker.vue
+│   ├── common/
+│   │   ├── LoadingSpinner.vue
+│   │   ├── ErrorMessage.vue
+│   │   ├── ConfirmDialog.vue
+│   │   ├── DatePicker.vue
+│   │   ├── FileUpload.vue
+│   │   ├── RatingStars.vue
+│   │   └── StatusBadge.vue
+│   └── layout/
+│       ├── ClientHeader.vue
+│       ├── ClientSidebar.vue
+│       ├── BreadcrumbNav.vue
+│       └── NotificationBell.vue
+```
+
+## Key Implementation Guidelines
+
+### 1. Real-time Updates
+```javascript
+// Implement real-time updates for:
+- Project status changes
+- New messages and replies
+- Milestone completions
+- Document uploads and approvals
+- Invoice status updates
+- Team member assignments
+- Meeting notifications
+```
+
+### 2. Document Security
+```javascript
+// Implement secure document access:
+- Client-specific document visibility
+- Version control and approval workflows
+- Secure download links with expiration
+- Document access logging
+- Watermarking for sensitive documents
+- Download restrictions by document type
+```
+
+### 3. Communication Features
+```javascript
+// Rich communication capabilities:
+- Threaded conversations
+- File sharing with preview
+- Message search and filtering
+- Read receipts and typing indicators
+- Priority message flagging
+- Automated status updates
+- Integration with video calling
+```
+
+### 4. Progress Visualization
+```javascript
+// Visual progress tracking:
+- Interactive timeline views
+- Progress bars and completion percentages
+- Gantt chart representations
+- Milestone dependency visualization
+- Risk and issue tracking
+- Quality gate indicators
+```
+
+### 5. Mobile Responsiveness
+```javascript
+// Mobile-first design approach:
+- Touch-friendly interface elements
+- Responsive grid layouts
+- Mobile-optimized file uploads
+- Swipe gestures for navigation
+- Push notifications support
+- Offline capability for viewing
+```
+
+### 6. Accessibility Features
+```javascript
+// WCAG 2.1 compliance:
+- Screen reader compatibility
+- Keyboard navigation support
+- High contrast mode options
+- Text size adjustment
+- Alternative text for images
+- Focus indicators
+```
+
+## Security Considerations
+- Client data isolation per vendor
+- Secure file upload and storage
+- Message encryption in transit
+- Session management and timeout
+- Role-based document access
+- Audit logging for all actions
+- Two-factor authentication option
+- GDPR compliance for data handling
+
+## Performance Optimization
+- Lazy loading for large document lists
+- Pagination for message threads
+- Caching for frequently accessed data
+- Progressive image loading
+- Optimized API response sizes
+- Client-side state management
+- Connection pooling for real-time features
+
+## User Experience Guidelines
+- Intuitive navigation and information architecture
+- Consistent design patterns across all pages
+- Clear status indicators and progress feedback
+- Helpful tooltips and onboarding guides
+- Error handling with actionable messages
+- Quick actions and shortcuts
+- Personalization options
+
+## Notification System
+- Real-time in-app notifications
+- Email notification preferences
+- SMS alerts for urgent updates
+- Digest emails for regular updates
+- Notification history and archive
+- Custom notification rules
+- Do-not-disturb scheduling
+
+Remember: This portal is the client's primary window into their project. Focus on transparency, clear communication, and making complex project information easily digestible. Every feature should build trust and demonstrate the vendor's professionalism and attention to client needs.

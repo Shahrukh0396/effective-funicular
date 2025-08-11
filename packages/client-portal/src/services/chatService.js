@@ -1,6 +1,9 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/'
+
+console.log('🔍 API_BASE_URL:', API_BASE_URL)
+console.log('🔍 VITE_API_URL:', import.meta.env.VITE_API_URL)
 
 // Create axios instance with auth headers
 const api = axios.create({
@@ -23,10 +26,66 @@ const chatService = {
   // Get all conversations for the current user
   async getConversations() {
     try {
-      const response = await api.get('/chat/conversations')
-      return response
+      const response = await api.get('api/chat/conversations')
+      return response.data
     } catch (error) {
       console.error('Error fetching conversations:', error)
+      return {
+        data: []
+      }
+    }
+  },
+
+  // Get default channels
+  async getDefaultChannels() {
+    try {
+      const response = await api.get('api/chat/channels')
+      return response.data
+    } catch (error) {
+      console.error('Error fetching channels:', error)
+      throw error
+    }
+  },
+
+  // Join a channel
+  async joinChannel(conversationId) {
+    try {
+      const response = await api.post(`api/chat/conversations/${conversationId}/join`)
+      return response.data
+    } catch (error) {
+      console.error('Error joining channel:', error)
+      throw error
+    }
+  },
+
+  // Add members to private channel
+  async addChannelMembers(conversationId, userIds) {
+    try {
+      const response = await api.post(`api/chat/conversations/${conversationId}/members`, {
+        userIds
+      })
+      return response.data
+    } catch (error) {
+      console.error('Error adding channel members:', error)
+      throw error
+    }
+  },
+
+  // Create or get support conversation
+  async createSupportConversation(message = null) {
+    try {
+      console.log('🔍 Creating support conversation with message:', message)
+      console.log('🔍 Auth token:', !!localStorage.getItem('token'))
+      console.log('🔍 Full URL will be:', API_BASE_URL + 'api/chat/support')
+      
+      const response = await api.post('api/chat/support', {
+        message
+      })
+      console.log('🔍 Support conversation response:', response)
+      return response.data
+    } catch (error) {
+      console.error('Error creating support conversation:', error)
+      console.error('🔍 Error details:', error.config?.url)
       throw error
     }
   },
@@ -34,8 +93,8 @@ const chatService = {
   // Get messages for a specific conversation
   async getMessages(conversationId) {
     try {
-      const response = await api.get(`/chat/conversations/${conversationId}/messages`)
-      return response
+      const response = await api.get(`api/chat/conversations/${conversationId}/messages`)
+      return response.data
     } catch (error) {
       console.error('Error fetching messages:', error)
       throw error
@@ -45,7 +104,7 @@ const chatService = {
   // Send a text message
   async sendTextMessage({ conversationId, content }) {
     try {
-      const response = await api.post(`/chat/conversations/${conversationId}/messages`, {
+      const response = await api.post(`api/chat/conversations/${conversationId}/messages`, {
         content,
         messageType: 'text'
       })
@@ -59,7 +118,7 @@ const chatService = {
   // Send a file message
   async sendFileMessage(formData) {
     try {
-      const response = await api.post('/chat/messages/file', formData, {
+      const response = await api.post('api/chat/messages/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -74,7 +133,7 @@ const chatService = {
   // Create a direct conversation
   async createDirectConversation({ participantId }) {
     try {
-      const response = await api.post('/chat/conversations', {
+      const response = await api.post('api/chat/conversations', {
         type: 'direct',
         participantId
       })
@@ -88,7 +147,7 @@ const chatService = {
   // Create a group conversation
   async createGroupConversation({ name, participantIds }) {
     try {
-      const response = await api.post('/chat/conversations', {
+      const response = await api.post('api/chat/conversations', {
         type: 'group',
         name,
         participantIds
@@ -100,10 +159,81 @@ const chatService = {
     }
   },
 
+  // Create a channel
+  async createChannel({ name, channelType, purpose, topic, isPublic = true, participantIds = [] }) {
+    try {
+      const response = await api.post('api/chat/conversations', {
+        type: 'channel',
+        name,
+        channelType,
+        purpose,
+        topic,
+        isPublic,
+        participantIds
+      })
+      return response
+    } catch (error) {
+      console.error('Error creating channel:', error)
+      throw error
+    }
+  },
+
+  // Search messages
+  async searchMessages(query, conversationId = null) {
+    try {
+      const params = { q: query }
+      if (conversationId) {
+        params.conversationId = conversationId
+      }
+      const response = await api.get('api/chat/search', { params })
+      return response.data
+    } catch (error) {
+      console.error('Error searching messages:', error)
+      throw error
+    }
+  },
+
+  // Add reaction to message
+  async addReaction(messageId, emoji) {
+    try {
+      const response = await api.post(`api/chat/messages/${messageId}/reactions`, {
+        emoji
+      })
+      return response.data
+    } catch (error) {
+      console.error('Error adding reaction:', error)
+      throw error
+    }
+  },
+
+  // Edit message
+  async editMessage(messageId, content) {
+    try {
+      const response = await api.put(`api/chat/messages/${messageId}`, {
+        content
+      })
+      return response.data
+    } catch (error) {
+      console.error('Error editing message:', error)
+      throw error
+    }
+  },
+
+  // Delete message
+  async deleteMessage(messageId) {
+    try {
+      const response = await api.delete(`api/chat/messages/${messageId}`)
+      return response.data
+    } catch (error) {
+      console.error('Error deleting message:', error)
+      throw error
+    }
+  },
+
   // Mark messages as read
   async markAsRead(conversationId) {
     try {
-      const response = await api.put(`/chat/conversations/${conversationId}/read`)
+      const response = await api.put(`api/chat/conversations/${conversationId}/read`)
       return response
     } catch (error) {
       console.error('Error marking messages as read:', error)
@@ -111,35 +241,11 @@ const chatService = {
     }
   },
 
-  // Delete a message
-  async deleteMessage(messageId) {
-    try {
-      const response = await api.delete(`/chat/messages/${messageId}`)
-      return response
-    } catch (error) {
-      console.error('Error deleting message:', error)
-      throw error
-    }
-  },
-
-  // Edit a message
-  async editMessage(messageId, content) {
-    try {
-      const response = await api.put(`/chat/messages/${messageId}`, {
-        content
-      })
-      return response
-    } catch (error) {
-      console.error('Error editing message:', error)
-      throw error
-    }
-  },
-
   // Get available users for new conversations
   async getAvailableUsers() {
     try {
-      const response = await api.get('/chat/users')
-      return response
+      const response = await api.get('api/chat/users')
+      return response.data
     } catch (error) {
       console.error('Error fetching available users:', error)
       throw error
@@ -149,7 +255,7 @@ const chatService = {
   // Leave a group conversation
   async leaveConversation(conversationId) {
     try {
-      const response = await api.delete(`/chat/conversations/${conversationId}/leave`)
+      const response = await api.delete(`api/chat/conversations/${conversationId}/leave`)
       return response
     } catch (error) {
       console.error('Error leaving conversation:', error)
@@ -160,7 +266,7 @@ const chatService = {
   // Get conversation details
   async getConversationDetails(conversationId) {
     try {
-      const response = await api.get(`/chat/conversations/${conversationId}`)
+      const response = await api.get(`api/chat/conversations/${conversationId}`)
       return response
     } catch (error) {
       console.error('Error fetching conversation details:', error)
@@ -168,23 +274,10 @@ const chatService = {
     }
   },
 
-  // Search conversations
-  async searchConversations(query) {
-    try {
-      const response = await api.get('/chat/conversations/search', {
-        params: { q: query }
-      })
-      return response
-    } catch (error) {
-      console.error('Error searching conversations:', error)
-      throw error
-    }
-  },
-
   // Get unread message count
   async getUnreadCount() {
     try {
-      const response = await api.get('/chat/unread-count')
+      const response = await api.get('api/chat/unread-count')
       return response
     } catch (error) {
       console.error('Error fetching unread count:', error)

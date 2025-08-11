@@ -258,8 +258,10 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useTaskStore } from '../stores/taskStore'
+import { useAuthStore } from '../stores/authStore'
 
 const taskStore = useTaskStore()
+const authStore = useAuthStore()
 
 // Reactive data
 const statusFilter = ref('')
@@ -267,7 +269,8 @@ const priorityFilter = ref('')
 
 // Computed properties
 const filteredTasks = computed(() => {
-  let filtered = taskStore.myTasks
+  console.log('🔍 MyTasks - Computing filtered tasks from:', taskStore.myTasks)
+  let filtered = taskStore.myTasks || []
   
   if (statusFilter.value) {
     filtered = filtered.filter(task => task.status === statusFilter.value)
@@ -277,7 +280,7 @@ const filteredTasks = computed(() => {
     filtered = filtered.filter(task => task.priority === priorityFilter.value)
   }
   
-  return filtered.sort((a, b) => {
+  const sorted = filtered.sort((a, b) => {
     // Sort by priority first, then by due date
     const priorityOrder = { high: 3, medium: 2, low: 1 }
     const aPriority = priorityOrder[a.priority] || 0
@@ -293,6 +296,9 @@ const filteredTasks = computed(() => {
     
     return 0
   })
+  
+  console.log('🔍 MyTasks - Filtered and sorted tasks result:', sorted)
+  return sorted
 })
 
 const stats = computed(() => {
@@ -391,6 +397,12 @@ const getTaskDuration = (task) => {
 }
 
 onMounted(async () => {
+  console.log('🔍 MyTasks - Component mounted')
+  console.log('🔍 MyTasks - Auth store user:', authStore.user)
+  console.log('🔍 MyTasks - Auth store token:', !!authStore.token)
+  console.log('🔍 MyTasks - Loading my tasks...')
   await taskStore.fetchMyTasks()
+  console.log('🔍 MyTasks - My tasks loaded:', taskStore.myTasks)
+  console.log('🔍 MyTasks - Current user:', authStore.user)
 })
 </script> 

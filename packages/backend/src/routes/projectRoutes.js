@@ -117,6 +117,10 @@ const router = express.Router()
  *               - name
  *               - description
  *               - client
+ *               - type
+ *               - budget.estimated
+ *               - timeline.startDate
+ *               - timeline.endDate
  *             properties:
  *               name:
  *                 type: string
@@ -130,23 +134,61 @@ const router = express.Router()
  *               client:
  *                 type: string
  *                 example: "507f1f77bcf86cd799439011"
+ *               type:
+ *                 type: string
+ *                 enum: [web_development, mobile_app, consulting, design, marketing, ecommerce, saas_development, maintenance, support, training, other]
+ *                 example: "web_development"
  *               status:
  *                 type: string
  *                 enum: [planning, active, completed, on-hold]
  *                 default: "planning"
  *                 example: "planning"
- *               startDate:
+ *               priority:
  *                 type: string
- *                 format: date
- *                 example: "2024-01-01"
- *               endDate:
- *                 type: string
- *                 format: date
- *                 example: "2024-06-30"
+ *                 enum: [low, medium, high, urgent]
+ *                 default: "medium"
+ *                 example: "medium"
  *               budget:
- *                 type: number
- *                 minimum: 0
- *                 example: 50000
+ *                 type: object
+ *                 required:
+ *                   - estimated
+ *                 properties:
+ *                   estimated:
+ *                     type: number
+ *                     minimum: 0
+ *                     example: 50000
+ *                   currency:
+ *                     type: string
+ *                     enum: [USD, EUR, GBP, CAD, AUD]
+ *                     default: "USD"
+ *                     example: "USD"
+ *                   billingType:
+ *                     type: string
+ *                     enum: [fixed, hourly, monthly, milestone]
+ *                     default: "fixed"
+ *                     example: "fixed"
+ *                   hourlyRate:
+ *                     type: number
+ *                     minimum: 0
+ *                     example: 150
+ *               timeline:
+ *                 type: object
+ *                 required:
+ *                   - startDate
+ *                   - endDate
+ *                 properties:
+ *                   startDate:
+ *                     type: string
+ *                     format: date
+ *                     example: "2024-01-01"
+ *                   endDate:
+ *                     type: string
+ *                     format: date
+ *                     example: "2024-06-30"
+ *                   estimatedHours:
+ *                     type: number
+ *                     minimum: 0
+ *                     example: 400
  *               team:
  *                 type: array
  *                 items:
@@ -203,15 +245,21 @@ router.get('/',
 
 router.post('/',
   auth,
-  authorize(['admin', 'employee']),
+  authorize(['vendor_admin', 'super_admin', 'client']), // Only vendor admins, super admins, and vendor clients can create projects
   [
     body('name').trim().isLength({ min: 3, max: 100 }),
     body('description').trim().isLength({ min: 10 }),
     body('client').isMongoId(),
+    body('type').isIn(['web_development', 'mobile_app', 'consulting', 'design', 'marketing', 'ecommerce', 'saas_development', 'maintenance', 'support', 'training', 'other']),
     body('status').optional().isIn(['planning', 'active', 'completed', 'on-hold']),
-    body('startDate').optional().isISO8601().toDate(),
-    body('endDate').optional().isISO8601().toDate(),
-    body('budget').optional().isFloat({ min: 0 }),
+    body('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
+    body('budget.estimated').isFloat({ min: 0 }),
+    body('budget.currency').optional().isIn(['USD', 'EUR', 'GBP', 'CAD', 'AUD']),
+    body('budget.billingType').optional().isIn(['fixed', 'hourly', 'monthly', 'milestone']),
+    body('budget.hourlyRate').optional().isFloat({ min: 0 }),
+    body('timeline.startDate').isISO8601().toDate(),
+    body('timeline.endDate').isISO8601().toDate(),
+    body('timeline.estimatedHours').optional().isFloat({ min: 0 }),
     body('team').optional().isArray(),
     body('team.*').optional().isMongoId()
   ],
@@ -291,14 +339,44 @@ router.post('/',
  *                 type: string
  *                 minLength: 10
  *                 example: "Updated website redesign with enhanced features"
+ *               type:
+ *                 type: string
+ *                 enum: [web_development, mobile_app, consulting, design, marketing, ecommerce, saas_development, maintenance, support, training, other]
+ *                 example: "web_development"
  *               status:
  *                 type: string
  *                 enum: [planning, active, completed, on-hold]
  *                 example: "active"
- *               startDate:
+ *               priority:
  *                 type: string
- *                 format: date
- *                 example: "2024-01-01"
+ *                 enum: [low, medium, high, urgent]
+ *                 example: "medium"
+ *               budget:
+ *                 type: object
+ *                 properties:
+ *                   estimated:
+ *                     type: number
+ *                     minimum: 0
+ *                     example: 75000
+ *                   currency:
+ *                     type: string
+ *                     enum: [USD, EUR, GBP, CAD, AUD]
+ *                     example: "USD"
+ *                   billingType:
+ *                     type: string
+ *                     enum: [fixed, hourly, monthly, milestone]
+ *                     example: "fixed"
+ *                   hourlyRate:
+ *                     type: number
+ *                     minimum: 0
+ *                     example: 150
+ *               timeline:
+ *                 type: object
+ *                 properties:
+ *                   startDate:
+ *                     type: string
+ *                     format: date
+ *                     example: "2024-01-01"
  *               endDate:
  *                 type: string
  *                 format: date
@@ -399,14 +477,20 @@ router.get('/:id',
 
 router.put('/:id',
   auth,
-  authorize(['admin', 'employee']),
+  authorize(['vendor_admin', 'employee']),
   [
     body('name').optional().trim().isLength({ min: 3, max: 100 }),
     body('description').optional().trim().isLength({ min: 10 }),
+    body('type').optional().isIn(['web_development', 'mobile_app', 'consulting', 'design', 'marketing', 'ecommerce', 'saas_development', 'maintenance', 'support', 'training', 'other']),
     body('status').optional().isIn(['planning', 'active', 'completed', 'on-hold']),
-    body('startDate').optional().isISO8601().toDate(),
-    body('endDate').optional().isISO8601().toDate(),
-    body('budget').optional().isFloat({ min: 0 }),
+    body('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
+    body('budget.estimated').optional().isFloat({ min: 0 }),
+    body('budget.currency').optional().isIn(['USD', 'EUR', 'GBP', 'CAD', 'AUD']),
+    body('budget.billingType').optional().isIn(['fixed', 'hourly', 'monthly', 'milestone']),
+    body('budget.hourlyRate').optional().isFloat({ min: 0 }),
+    body('timeline.startDate').optional().isISO8601().toDate(),
+    body('timeline.endDate').optional().isISO8601().toDate(),
+    body('timeline.estimatedHours').optional().isFloat({ min: 0 }),
     body('team').optional().isArray(),
     body('team.*').optional().isMongoId()
   ],
@@ -416,7 +500,7 @@ router.put('/:id',
 
 router.delete('/:id',
   auth,
-  authorize(['admin']),
+  authorize(['vendor_admin']),
   projectController.deleteProject
 )
 
@@ -812,7 +896,7 @@ router.post('/:id/team', [
 
     // Check permissions
     const canManageTeam = req.user.role === 'admin' ||
-                         project.projectManager.toString() === req.user._id.toString()
+                         project.team?.projectManager?.toString() === req.user._id.toString()
 
     if (!canManageTeam) {
       return res.status(403).json({
@@ -824,9 +908,9 @@ router.post('/:id/team', [
     await project.addTeamMember(userId, role)
 
     const updatedProject = await Project.findById(req.params.id)
-      .populate('client', 'firstName lastName email company')
-      .populate('projectManager', 'firstName lastName email')
-      .populate('team.user', 'firstName lastName email avatar')
+      .populate('clientId', 'firstName lastName email company')
+      .populate('team.projectManager', 'firstName lastName email')
+      .populate('team.members.user', 'firstName lastName email avatar')
 
     res.json({
       success: true,
@@ -860,7 +944,7 @@ router.delete('/:id/team/:userId', auth, async (req, res) => {
 
     // Check permissions
     const canManageTeam = req.user.role === 'admin' ||
-                         project.projectManager.toString() === req.user._id.toString()
+                         project.team?.projectManager?.toString() === req.user._id.toString()
 
     if (!canManageTeam) {
       return res.status(403).json({
@@ -872,9 +956,9 @@ router.delete('/:id/team/:userId', auth, async (req, res) => {
     await project.removeTeamMember(req.params.userId)
 
     const updatedProject = await Project.findById(req.params.id)
-      .populate('client', 'firstName lastName email company')
-      .populate('projectManager', 'firstName lastName email')
-      .populate('team.user', 'firstName lastName email avatar')
+      .populate('clientId', 'firstName lastName email company')
+      .populate('team.projectManager', 'firstName lastName email')
+      .populate('team.members.user', 'firstName lastName email avatar')
 
     res.json({
       success: true,
@@ -908,9 +992,9 @@ router.post('/:id/attachments', auth, upload.single('file'), async (req, res) =>
 
     // Check permissions
     const canUpload = req.user.role === 'admin' ||
-                     project.client.toString() === req.user._id.toString() ||
-                     project.team.some(member => member.user.toString() === req.user._id.toString()) ||
-                     project.projectManager.toString() === req.user._id.toString()
+                     project.clientId.toString() === req.user._id.toString() ||
+                     project.team?.members?.some(member => member.user.toString() === req.user._id.toString()) ||
+                     project.team?.projectManager?.toString() === req.user._id.toString()
 
     if (!canUpload) {
       return res.status(403).json({

@@ -1,21 +1,27 @@
 const mongoose = require('mongoose')
-const bcrypt = require('bcryptjs')
 
 const vendorSchema = new mongoose.Schema({
-  // Basic vendor information
-  companyName: {
+  name: {
     type: String,
-    required: [true, 'Company name is required'],
+    required: [true, 'Vendor name is required'],
     trim: true,
-    maxlength: [100, 'Company name cannot exceed 100 characters']
+    maxlength: [100, 'Vendor name cannot exceed 100 characters']
+  },
+  domain: {
+    type: String,
+    unique: true,
+    required: [true, 'Domain is required'],
+    trim: true,
+    lowercase: true,
+    match: [/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/, 'Please enter a valid subdomain']
   },
   slug: {
     type: String,
-    required: [true, 'Company slug is required'],
     unique: true,
-    lowercase: true,
-    trim: true,
-    match: [/^[a-z0-9-]+$/, 'Slug can only contain lowercase letters, numbers, and hyphens']
+    sparse: true,
+    default: function() {
+      return this.domain
+    }
   },
   email: {
     type: String,
@@ -25,369 +31,423 @@ const vendorSchema = new mongoose.Schema({
     trim: true,
     match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
   },
-  password: {
+  subscriptionTier: {
     type: String,
-    required: [true, 'Password is required'],
-    minlength: [8, 'Password must be at least 8 characters long']
+    enum: ['starter', 'professional', 'enterprise', 'custom'],
+    default: 'starter',
+    required: true
   },
-  
-  // Contact information
-  contactPerson: {
-    firstName: {
-      type: String,
-      required: [true, 'Contact first name is required'],
-      trim: true
-    },
-    lastName: {
-      type: String,
-      required: [true, 'Contact last name is required'],
-      trim: true
-    },
-    phone: {
-      type: String,
-      trim: true
-    },
-    position: {
-      type: String,
-      trim: true
-    }
-  },
-  
-  // Company details
-  industry: {
+  subscriptionStatus: {
     type: String,
-    enum: [
-      'digital-marketing',
-      'web-development',
-      'design-agency',
-      'consulting',
-      'software-development',
-      'content-creation',
-      'seo-agency',
-      'social-media',
-      'ecommerce',
-      'other'
-    ],
-    default: 'other'
+    enum: ['active', 'suspended', 'cancelled', 'trial', 'pending'],
+    default: 'trial'
   },
-  companySize: {
-    type: String,
-    enum: ['1-5', '6-10', '11-25', '26-50', '51-100', '100+'],
-    default: '1-5'
-  },
-  website: {
-    type: String,
-    trim: true
-  },
-  description: {
-    type: String,
-    maxlength: [1000, 'Description cannot exceed 1000 characters']
-  },
-  
-  // White-label branding
-  branding: {
-    logo: {
+  billingInfo: {
+    stripeCustomerId: {
       type: String,
-      default: null
+      sparse: true
     },
-    logoDark: {
+    subscriptionId: {
       type: String,
-      default: null
+      sparse: true
     },
-    favicon: {
-      type: String,
-      default: null
+    nextBillingDate: {
+      type: Date
     },
-    primaryColor: {
-      type: String,
-      default: '#3B82F6',
-      match: [/^#[0-9A-F]{6}$/i, 'Primary color must be a valid hex color']
-    },
-    secondaryColor: {
-      type: String,
-      default: '#1F2937',
-      match: [/^#[0-9A-F]{6}$/i, 'Secondary color must be a valid hex color']
-    },
-    companyName: {
-      type: String,
-      default: null // If null, use vendor.companyName
-    },
-    tagline: {
-      type: String,
-      maxlength: [200, 'Tagline cannot exceed 200 characters']
-    },
-    customDomain: {
-      type: String,
-      trim: true,
-      lowercase: true
-    }
-  },
-  
-  // Subscription and billing
-  subscription: {
-    plan: {
-      type: String,
-      enum: ['starter', 'professional', 'enterprise'],
-      default: 'starter'
-    },
-    status: {
-      type: String,
-      enum: ['trial', 'active', 'past_due', 'cancelled', 'suspended'],
-      default: 'trial'
-    },
-    stripeCustomerId: String,
-    stripeSubscriptionId: String,
-    currentPeriodStart: Date,
-    currentPeriodEnd: Date,
-    trialEndsAt: {
-      type: Date,
-      default: () => new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) // 14 days trial
-    }
-  },
-  
-  // Usage limits and quotas
-  limits: {
-    agents: {
-      type: Number,
-      default: 5
-    },
-    contractors: {
-      type: Number,
-      default: 10
-    },
-    projects: {
-      type: Number,
-      default: 10
-    },
-    storage: {
-      type: Number,
-      default: 10 * 1024 * 1024 * 1024 // 10GB in bytes
-    }
-  },
-  
-  // Current usage
-  usage: {
-    agents: {
+    monthlyRevenue: {
       type: Number,
       default: 0
-    },
-    contractors: {
-      type: Number,
-      default: 0
-    },
-    projects: {
-      type: Number,
-      default: 0
-    },
-    storage: {
-      type: Number,
-      default: 0
-    }
-  },
-  
-  // Account status
-  isActive: {
-    type: Boolean,
-    default: true
-  },
-  isEmailVerified: {
-    type: Boolean,
-    default: false
-  },
-  emailVerificationToken: String,
-  emailVerificationExpires: Date,
-  
-  // Onboarding status
-  onboarding: {
-    step: {
-      type: String,
-      enum: ['company-info', 'branding', 'team-setup', 'first-project', 'completed'],
-      default: 'company-info'
-    },
-    completedSteps: [{
-      type: String
-    }],
-    isCompleted: {
-      type: Boolean,
-      default: false
-    }
-  },
-  
-  // Settings and preferences
-  settings: {
-    notifications: {
-      email: { type: Boolean, default: true },
-      push: { type: Boolean, default: true },
-      sms: { type: Boolean, default: false }
-    },
-    timezone: {
-      type: String,
-      default: 'UTC'
-    },
-    language: {
-      type: String,
-      default: 'en'
     },
     currency: {
       type: String,
-      default: 'USD'
+      default: 'USD',
+      enum: ['USD', 'EUR', 'GBP', 'CAD', 'AUD']
     },
-    dateFormat: {
+    paymentMethod: {
       type: String,
-      default: 'MM/DD/YYYY'
+      enum: ['stripe', 'invoice', 'bank-transfer'],
+      default: 'stripe'
+    },
+    invoiceNumber: {
+      type: String,
+      sparse: true
+    },
+    contractLength: {
+      type: String,
+      enum: ['monthly', 'annual', 'biennial'],
+      default: 'monthly'
     }
   },
-  
-  // Analytics and metrics
-  metrics: {
+  settings: {
+    branding: {
+      logo: {
+        type: String,
+        default: null
+      },
+      primaryColor: {
+        type: String,
+        default: '#3B82F6',
+        match: [/^#[0-9A-F]{6}$/i, 'Please enter a valid hex color']
+      },
+      secondaryColor: {
+        type: String,
+        default: '#8B5CF6',
+        match: [/^#[0-9A-F]{6}$/i, 'Please enter a valid hex color']
+      },
+      companyName: {
+        type: String,
+        default: null
+      },
+      customDomain: {
+        type: String,
+        default: null
+      },
+      whiteLabel: {
+        type: Boolean,
+        default: false
+      }
+    },
+    features: [{
+      type: String,
+      enum: [
+        'projects',
+        'tasks',
+        'time_tracking',
+        'chat',
+        'file_upload',
+        'analytics',
+        'billing',
+        'white_label',
+        'api_access',
+        'custom_branding',
+        'dedicated_support',
+        'custom_development'
+      ]
+    }],
+    integrations: {
+      slack: {
+        enabled: { type: Boolean, default: false },
+        webhookUrl: String,
+        channel: String
+      },
+      github: {
+        enabled: { type: Boolean, default: false },
+        accessToken: String,
+        repositories: [String]
+      },
+      jira: {
+        enabled: { type: Boolean, default: false },
+        baseUrl: String,
+        username: String,
+        apiToken: String
+      },
+      zapier: {
+        enabled: { type: Boolean, default: false },
+        webhookUrl: String
+      }
+    },
+    notifications: {
+      email: {
+        projectUpdates: { type: Boolean, default: true },
+        taskAssignments: { type: Boolean, default: true },
+        billingAlerts: { type: Boolean, default: true },
+        systemMaintenance: { type: Boolean, default: true }
+      },
+      push: {
+        enabled: { type: Boolean, default: true },
+        projectUpdates: { type: Boolean, default: true },
+        taskAssignments: { type: Boolean, default: true }
+      }
+    },
+    security: {
+      twoFactorRequired: { type: Boolean, default: false },
+      sessionTimeout: { type: Number, default: 24 }, // hours
+      maxLoginAttempts: { type: Number, default: 5 },
+      passwordPolicy: {
+        minLength: { type: Number, default: 8 },
+        requireUppercase: { type: Boolean, default: true },
+        requireLowercase: { type: Boolean, default: true },
+        requireNumbers: { type: Boolean, default: true },
+        requireSpecialChars: { type: Boolean, default: true }
+      }
+    }
+  },
+  contactInfo: {
+    address: {
+      street: String,
+      city: String,
+      state: String,
+      zipCode: String,
+      country: String
+    },
+    phone: {
+      type: String,
+      match: [/^[\+]?[1-9][\d]{0,15}$/, 'Please enter a valid phone number']
+    },
+    website: {
+      type: String,
+      match: [/^https?:\/\/.+/, 'Please enter a valid website URL']
+    },
+    primaryContact: {
+      name: String,
+      email: String,
+      phone: String,
+      position: String
+    }
+  },
+  limits: {
+    maxUsers: {
+      type: Number,
+      default: 10,
+      min: 1
+    },
+    maxProjects: {
+      type: Number,
+      default: 5,
+      min: 1
+    },
+    maxStorage: {
+      type: Number,
+      default: 10, // GB
+      min: 1
+    },
+    maxApiCalls: {
+      type: Number,
+      default: 1000,
+      min: 0
+    }
+  },
+  usage: {
+    currentUsers: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    currentProjects: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    currentStorage: {
+      type: Number,
+      default: 0, // GB
+      min: 0
+    },
+    apiCallsThisMonth: {
+      type: Number,
+      default: 0,
+      min: 0
+    }
+  },
+  analytics: {
     totalRevenue: {
       type: Number,
       default: 0
     },
-    totalProjects: {
+    activeProjects: {
       type: Number,
       default: 0
     },
-    totalClients: {
+    completedProjects: {
       type: Number,
       default: 0
     },
-    averageProjectValue: {
+    averageProjectDuration: {
       type: Number,
-      default: 0
+      default: 0 // days
     },
-    lastActivity: {
-      type: Date,
-      default: Date.now
+    customerSatisfaction: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5
     }
   },
-  
-  // Timestamps
-  lastLogin: Date,
-  lastActivity: Date
+  onboarding: {
+    status: {
+      type: String,
+      enum: ['pending', 'in_progress', 'completed', 'failed'],
+      default: 'pending'
+    },
+    completedSteps: [{
+      step: String,
+      completedAt: Date
+    }],
+    currentStep: {
+      type: String,
+      default: 'company_info'
+    },
+    startedAt: {
+      type: Date,
+      default: Date.now
+    },
+    completedAt: Date
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  trialEndsAt: {
+    type: Date,
+    default: function() {
+      return new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) // 14 days
+    }
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 })
 
-// Indexes
-vendorSchema.index({ slug: 1 })
-vendorSchema.index({ email: 1 })
-vendorSchema.index({ 'subscription.status': 1 })
-vendorSchema.index({ 'onboarding.step': 1 })
-vendorSchema.index({ industry: 1 })
-
-// Virtual for full contact name
-vendorSchema.virtual('contactFullName').get(function() {
-  return `${this.contactPerson.firstName} ${this.contactPerson.lastName}`
+// Virtual for full domain
+vendorSchema.virtual('fullDomain').get(function() {
+  return `${this.domain}.linton.com`
 })
 
-// Virtual for isSubscribed
-vendorSchema.virtual('isSubscribed').get(function() {
-  return this.subscription.status === 'active'
+// Virtual for custom domain or subdomain
+vendorSchema.virtual('displayDomain').get(function() {
+  return this.settings.branding.customDomain || this.fullDomain
 })
 
-// Virtual for isInTrial
+// Virtual for subscription status
+vendorSchema.virtual('isSubscriptionActive').get(function() {
+  return ['active', 'trial'].includes(this.subscriptionStatus)
+})
+
+// Virtual for trial status
 vendorSchema.virtual('isInTrial').get(function() {
-  return this.subscription.status === 'trial' && this.subscription.trialEndsAt > new Date()
-})
-
-// Virtual for trialDaysLeft
-vendorSchema.virtual('trialDaysLeft').get(function() {
-  if (!this.isInTrial) return 0
-  const now = new Date()
-  const trialEnd = this.subscription.trialEndsAt
-  const diffTime = trialEnd - now
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  return this.subscriptionStatus === 'trial' && this.trialEndsAt > new Date()
 })
 
 // Virtual for usage percentage
 vendorSchema.virtual('usagePercentage').get(function() {
+  const usersPercent = (this.usage.currentUsers / this.limits.maxUsers) * 100
+  const projectsPercent = (this.usage.currentProjects / this.limits.maxProjects) * 100
+  const storagePercent = (this.usage.currentStorage / this.limits.maxStorage) * 100
+  
   return {
-    agents: Math.round((this.usage.agents / this.limits.agents) * 100),
-    contractors: Math.round((this.usage.contractors / this.limits.contractors) * 100),
-    projects: Math.round((this.usage.projects / this.limits.projects) * 100),
-    storage: Math.round((this.usage.storage / this.limits.storage) * 100)
+    users: Math.min(usersPercent, 100),
+    projects: Math.min(projectsPercent, 100),
+    storage: Math.min(storagePercent, 100)
   }
 })
 
-// Pre-save middleware to hash password
-vendorSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next()
-  
-  try {
-    const salt = await bcrypt.genSalt(12)
-    this.password = await bcrypt.hash(this.password, salt)
-    next()
-  } catch (error) {
-    next(error)
-  }
+// Indexes for performance
+vendorSchema.index({ domain: 1 })
+vendorSchema.index({ subscriptionStatus: 1 })
+vendorSchema.index({ subscriptionTier: 1 })
+vendorSchema.index({ isActive: 1 })
+vendorSchema.index({ 'billingInfo.stripeCustomerId': 1 })
+vendorSchema.index({ createdAt: 1 })
+
+// Pre-save middleware to update timestamps
+vendorSchema.pre('save', function(next) {
+  this.updatedAt = new Date()
+  next()
 })
 
-// Instance method to compare password
-vendorSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password)
+// Instance method to check if vendor can add user
+vendorSchema.methods.canAddUser = function() {
+  return this.usage.currentUsers < this.limits.maxUsers
 }
 
-// Instance method to generate auth token
-vendorSchema.methods.generateAuthToken = function() {
-  const jwt = require('jsonwebtoken')
-  const config = require('../config')
+// Instance method to check if vendor can add project
+vendorSchema.methods.canAddProject = function() {
+  return this.usage.currentProjects < this.limits.maxProjects
+}
+
+// Instance method to check if vendor can use storage
+vendorSchema.methods.canUseStorage = function(sizeInGB) {
+  return (this.usage.currentStorage + sizeInGB) <= this.limits.maxStorage
+}
+
+// Instance method to check if vendor has feature
+vendorSchema.methods.hasFeature = function(feature) {
+  return this.settings.features.includes(feature)
+}
+
+// Instance method to check if vendor is white-label
+vendorSchema.methods.isWhiteLabel = function() {
+  return this.settings.branding.whiteLabel
+}
+
+// Instance method to get subscription price
+vendorSchema.methods.getSubscriptionPrice = function() {
+  const prices = {
+    starter: 49,
+    professional: 99,
+    enterprise: 199,
+    custom: 0 // Custom pricing
+  }
   
-  return jwt.sign(
-    { 
-      vendorId: this._id,
-      slug: this.slug,
-      email: this.email,
-      role: 'vendor'
-    },
-    config.jwtSecret,
-    { expiresIn: config.jwtExpiresIn }
-  )
-}
-
-// Instance method to get public profile
-vendorSchema.methods.getPublicProfile = function() {
-  const vendorObject = this.toObject()
-  delete vendorObject.password
-  delete vendorObject.emailVerificationToken
-  delete vendorObject.emailVerificationExpires
-  delete vendorObject.subscription.stripeCustomerId
-  delete vendorObject.subscription.stripeSubscriptionId
-  return vendorObject
-}
-
-// Instance method to check if usage limit exceeded
-vendorSchema.methods.isLimitExceeded = function(resourceType) {
-  return this.usage[resourceType] >= this.limits[resourceType]
-}
-
-// Instance method to increment usage
-vendorSchema.methods.incrementUsage = function(resourceType, amount = 1) {
-  this.usage[resourceType] += amount
-  return this.save()
-}
-
-// Instance method to decrement usage
-vendorSchema.methods.decrementUsage = function(resourceType, amount = 1) {
-  this.usage[resourceType] = Math.max(0, this.usage[resourceType] - amount)
-  return this.save()
-}
-
-// Static method to find by slug
-vendorSchema.statics.findBySlug = function(slug) {
-  return this.findOne({ slug: slug.toLowerCase() })
-}
-
-// Static method to find by email
-vendorSchema.statics.findByEmail = function(email) {
-  return this.findOne({ email: email.toLowerCase() })
+  const basePrice = prices[this.subscriptionTier]
+  const multiplier = this.billingInfo.contractLength === 'annual' ? 0.8 : 1
+  const multiplier2 = this.billingInfo.contractLength === 'biennial' ? 0.7 : 1
+  
+  return Math.round(basePrice * multiplier * multiplier2)
 }
 
 // Static method to find active vendors
 vendorSchema.statics.findActive = function() {
   return this.find({ 
-    isActive: true,
-    'subscription.status': { $in: ['trial', 'active'] }
+    isActive: true, 
+    subscriptionStatus: { $in: ['active', 'trial'] } 
+  })
+}
+
+// Static method to find vendors by tier
+vendorSchema.statics.findByTier = function(tier) {
+  return this.find({ subscriptionTier: tier, isActive: true })
+}
+
+// Static method to get platform metrics
+vendorSchema.statics.getPlatformMetrics = async function() {
+  const metrics = await this.aggregate([
+    {
+      $match: { isActive: true }
+    },
+    {
+      $group: {
+        _id: null,
+        totalVendors: { $sum: 1 },
+        totalRevenue: { $sum: '$analytics.totalRevenue' },
+        activeVendors: {
+          $sum: {
+            $cond: [
+              { $in: ['$subscriptionStatus', ['active', 'trial']] },
+              1,
+              0
+            ]
+          }
+        },
+        averageSatisfaction: { $avg: '$analytics.customerSatisfaction' }
+      }
+    }
+  ])
+  
+  return metrics[0] || {
+    totalVendors: 0,
+    totalRevenue: 0,
+    activeVendors: 0,
+    averageSatisfaction: 0
+  }
+}
+
+// Static method to find vendors with expiring trials
+vendorSchema.statics.findExpiringTrials = function(days = 3) {
+  const threshold = new Date(Date.now() + days * 24 * 60 * 60 * 1000)
+  return this.find({
+    subscriptionStatus: 'trial',
+    trialEndsAt: { $lte: threshold },
+    isActive: true
   })
 }
 

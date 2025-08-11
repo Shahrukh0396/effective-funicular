@@ -1,48 +1,89 @@
 const express = require('express')
-const { body, validationResult, query } = require('express-validator')
+const bcrypt = require('bcryptjs')
+const rateLimit = require('express-rate-limit')
 const User = require('../models/User')
-const Project = require('../models/Project')
-const { auth, authorize, hasPermission } = require('../middleware/auth')
+const Vendor = require('../models/Vendor')
+const Session = require('../models/Session')
+const AuditLog = require('../models/AuditLog')
+const authService = require('../services/authService')
+const sessionService = require('../services/sessionService')
+const { 
+  auth, 
+  authorize, 
+  hasPermission, 
+  requirePortalAccess,
+  superAdminOnly,
+  employeeOrAdmin,
+  clientOnly,
+  validateSession 
+} = require('../middleware/auth')
 const { validateRequest } = require('../middleware/validation')
-const userController = require('../controllers/userController')
+const config = require('../config')
 
 const router = express.Router()
 
-// @route   GET /api/users
-// @desc    Get all users (admin only)
-// @access  Private (Admin)
-router.get('/', [
-  auth,
-  authorize('admin'),
-  query('role').optional().isIn(['client', 'employee', 'admin']),
-  query('status').optional().isIn(['active', 'inactive']),
-  query('page').optional().isInt({ min: 1 }),
-  query('limit').optional().isInt({ min: 1, max: 100 })
-], async (req, res) => {
+// Rate limiting for user operations
+const userLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: {
+    success: false,
+    message: 'Too many requests. Please try again later.'
+  }
+})
+
+// Apply rate limiting to all user routes
+router.use(userLimiter)
+
+// ==================== USER CRUD OPERATIONS ====================
+
+// Get all users (with role-based filtering)
+router.get('/', auth, hasPermission('manage_users'), async (req, res) => {
   try {
-    const errors = validationResult(req)
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      })
+    const { 
+      page = 1, 
+      limit = 10, 
+      role, 
+      search, 
+      status,
+      vendorId = req.vendorId 
+    } = req.query
+
+    const query = { vendor: vendorId }
+
+    // Role-based filtering
+    if (role) {
+      query.role = role
     }
 
-    const { role, status, page = 1, limit = 10 } = req.query
-    const skip = (page - 1) * limit
+    // Status filtering
+    if (status) {
+      query.isActive = status === 'active'
+    }
 
-    let filter = {}
-    if (role) filter.role = role
-    if (status) filter.isActive = status === 'active'
+    // Search functionality
+    if (search) {
+      query.$or = [
+        { firstName: { $regex: search, $options: 'i' } },
+        { lastName: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { company: { $regex: search, $options: 'i' } }
+      ]
+    }
 
-    const users = await User.find(filter)
-      .select('-password -emailVerificationToken -emailVerificationExpires -passwordResetToken -passwordResetExpires')
+    // Super admin can see all users across vendors
+    if (req.user.role === 'super_admin' || req.user.isSuperAccount) {
+      delete query.vendor
+    }
+
+    const users = await User.find(query)
+      .select('-password')
+      .populate('vendor', 'name domain')
       .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
 
-    const total = await User.countDocuments(filter)
+    const total = await User.countDocuments(query)
 
     res.json({
       success: true,
@@ -56,1033 +97,821 @@ router.get('/', [
         }
       }
     })
+
   } catch (error) {
     console.error('Get users error:', error)
     res.status(500).json({
       success: false,
-      message: 'Server error while fetching users'
+      message: 'Server error.'
     })
   }
 })
 
-// @route   GET /api/users/:id
-// @desc    Get user by ID
-// @access  Private (Admin or self)
-router.get('/:id', auth, async (req, res) => {
+// Get user by ID
+router.get('/:id', auth, hasPermission('manage_users'), async (req, res) => {
   try {
-    // Check if user is requesting their own profile or is admin
-    if (req.user.role !== 'admin' && req.user._id.toString() !== req.params.id) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied'
-      })
+    const { id } = req.params
+    const vendorId = req.user.role === 'super_admin' || req.user.isSuperAccount 
+      ? req.query.vendorId || req.vendorId 
+      : req.vendorId
+
+    const query = { _id: id }
+    if (!req.user.isSuperAccount) {
+      query.vendor = vendorId
     }
 
-    const user = await User.findById(req.params.id)
-      .select('-password -emailVerificationToken -emailVerificationExpires -passwordResetToken -passwordResetExpires')
+    const user = await User.findOne(query)
+      .select('-password')
+      .populate('vendor', 'name domain')
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: 'User not found.'
       })
     }
+
+    // Get user sessions
+    const sessions = await Session.findActiveSessions(user._id, user.vendor)
+
+    // Get recent activity
+    const recentActivity = await AuditLog.findUserActivity(user._id, 10)
 
     res.json({
       success: true,
       data: {
-        user
+        user,
+        sessions: sessions.length,
+        recentActivity: recentActivity.length
       }
     })
+
   } catch (error) {
     console.error('Get user error:', error)
     res.status(500).json({
       success: false,
-      message: 'Server error while fetching user'
+      message: 'Server error.'
     })
   }
 })
 
-// @route   PUT /api/users/:id
-// @desc    Update user (admin only)
-// @access  Private (Admin)
-router.put('/:id', [
-  auth,
-  authorize('admin'),
-  body('firstName')
-    .optional()
-    .trim()
-    .isLength({ min: 2, max: 50 })
-    .withMessage('First name must be between 2 and 50 characters'),
-  body('lastName')
-    .optional()
-    .trim()
-    .isLength({ min: 2, max: 50 })
-    .withMessage('Last name must be between 2 and 50 characters'),
-  body('role')
-    .optional()
-    .isIn(['client', 'employee', 'admin'])
-    .withMessage('Invalid role'),
-  body('isActive')
-    .optional()
-    .isBoolean()
-    .withMessage('isActive must be a boolean'),
-  body('permissions')
-    .optional()
-    .isArray()
-    .withMessage('Permissions must be an array')
-], async (req, res) => {
+// Create new user
+router.post('/', auth, hasPermission('manage_users'), async (req, res) => {
   try {
-    const errors = validationResult(req)
-    if (!errors.isEmpty()) {
+    const {
+      firstName,
+      lastName,
+      email,
+      password,
+      role,
+      company,
+      position,
+      department,
+      employeeId,
+      portalAccess,
+      permissions,
+      vendorId = req.vendorId
+    } = req.body
+
+    // Validate required fields
+    if (!firstName || !lastName || !email || !password || !role) {
       return res.status(400).json({
         success: false,
-        message: 'Validation failed',
-        errors: errors.array()
+        message: 'First name, last name, email, password, and role are required.'
       })
     }
 
-    const user = await User.findById(req.params.id)
+    // Check if email already exists
+    const existingUser = await User.findOne({ email })
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email already exists.'
+      })
+    }
 
+    // Validate role permissions
+    if (!req.user.isSuperAccount) {
+      // Regular admins can only create users with roles below their own
+      const roleHierarchy = ['client', 'employee', 'admin', 'super_admin']
+      const userRoleIndex = roleHierarchy.indexOf(req.user.role)
+      const newRoleIndex = roleHierarchy.indexOf(role)
+      
+      if (newRoleIndex >= userRoleIndex) {
+        return res.status(403).json({
+          success: false,
+          message: 'You can only create users with roles below your own.'
+        })
+      }
+    }
+
+    // Create user
+    const userData = {
+      firstName,
+      lastName,
+      email,
+      password,
+      role,
+      vendor: vendorId,
+      company,
+      position,
+      department,
+      employeeId,
+      portalAccess,
+      permissions: permissions || []
+    }
+
+    const user = new User(userData)
+    await user.save()
+
+    // Log user creation
+    await authService.logAuthEvent({
+      event: 'user.created',
+      userId: req.user._id,
+      vendorId: req.vendorId,
+      portalType: req.portalType,
+      request: {
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+        method: req.method,
+        url: req.originalUrl
+      },
+      metadata: {
+        createdUserId: user._id,
+        role: role,
+        success: true
+      }
+    })
+
+    res.status(201).json({
+      success: true,
+      message: 'User created successfully.',
+      data: {
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role,
+          company: user.company,
+          position: user.position,
+          isActive: user.isActive
+        }
+      }
+    })
+
+  } catch (error) {
+    console.error('Create user error:', error)
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message)
+      return res.status(400).json({
+        success: false,
+        message: validationErrors.join(', '),
+        errors: validationErrors
+      })
+    }
+    
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email already exists.'
+      })
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// Update user
+router.put('/:id', auth, hasPermission('manage_users'), async (req, res) => {
+  try {
+    const { id } = req.params
+    const {
+      firstName,
+      lastName,
+      email,
+      role,
+      company,
+      position,
+      department,
+      employeeId,
+      portalAccess,
+      permissions,
+      isActive
+    } = req.body
+
+    const query = { _id: id }
+    if (!req.user.isSuperAccount) {
+      query.vendor = req.vendorId
+    }
+
+    const user = await User.findOne(query)
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: 'User not found.'
       })
     }
 
-    const allowedUpdates = [
-      'firstName', 'lastName', 'role', 'isActive', 'permissions',
-      'phone', 'company', 'position', 'bio', 'preferences'
-    ]
+    // Check if trying to update super admin
+    if (user.role === 'super_admin' && !req.user.isSuperAccount) {
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot modify super admin accounts.'
+      })
+    }
 
-    const updates = {}
-    allowedUpdates.forEach(field => {
-      if (req.body[field] !== undefined) {
-        updates[field] = req.body[field]
+    // Update fields
+    if (firstName) user.firstName = firstName
+    if (lastName) user.lastName = lastName
+    if (email && email !== user.email) {
+      const existingUser = await User.findOne({ email })
+      if (existingUser && existingUser._id.toString() !== id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email already exists.'
+        })
+      }
+      user.email = email
+    }
+    if (role) user.role = role
+    if (company !== undefined) user.company = company
+    if (position !== undefined) user.position = position
+    if (department !== undefined) user.department = department
+    if (employeeId !== undefined) user.employeeId = employeeId
+    if (portalAccess) user.portalAccess = portalAccess
+    if (permissions) user.permissions = permissions
+    if (isActive !== undefined) user.isActive = isActive
+
+    await user.save()
+
+    // Log user update
+    await authService.logAuthEvent({
+      event: 'user.updated',
+      userId: req.user._id,
+      vendorId: req.vendorId,
+      portalType: req.portalType,
+      request: {
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+        method: req.method,
+        url: req.originalUrl
+      },
+      metadata: {
+        updatedUserId: user._id,
+        success: true
       }
     })
-
-    const updatedUser = await User.findByIdAndUpdate(
-      req.params.id,
-      updates,
-      { new: true, runValidators: true }
-    ).select('-password -emailVerificationToken -emailVerificationExpires -passwordResetToken -passwordResetExpires')
 
     res.json({
       success: true,
-      message: 'User updated successfully',
+      message: 'User updated successfully.',
       data: {
-        user: updatedUser
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role,
+          company: user.company,
+          position: user.position,
+          isActive: user.isActive
+        }
       }
     })
+
   } catch (error) {
     console.error('Update user error:', error)
     res.status(500).json({
       success: false,
-      message: 'Server error while updating user'
+      message: 'Server error.'
     })
   }
 })
 
-// @route   DELETE /api/users/:id
-// @desc    Delete user (admin only)
-// @access  Private (Admin)
-router.delete('/:id', auth, authorize('admin'), async (req, res) => {
+// Delete user
+router.delete('/:id', auth, hasPermission('manage_users'), async (req, res) => {
   try {
-    const user = await User.findById(req.params.id)
+    const { id } = req.params
 
+    const query = { _id: id }
+    if (!req.user.isSuperAccount) {
+      query.vendor = req.vendorId
+    }
+
+    const user = await User.findOne(query)
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: 'User not found.'
       })
     }
 
-    await User.findByIdAndDelete(req.params.id)
+    // Prevent self-deletion
+    if (user._id.toString() === req.user._id.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete your own account.'
+      })
+    }
+
+    // Check if trying to delete super admin
+    if (user.role === 'super_admin' && !req.user.isSuperAccount) {
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot delete super admin accounts.'
+      })
+    }
+
+    // Terminate all user sessions
+    await sessionService.forceLogoutUser(user._id, user.vendor, 'Account deleted')
+
+    // Soft delete - deactivate user
+    user.isActive = false
+    await user.save()
+
+    // Log user deletion
+    await authService.logAuthEvent({
+      event: 'user.deleted',
+      userId: req.user._id,
+      vendorId: req.vendorId,
+      portalType: req.portalType,
+      request: {
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+        method: req.method,
+        url: req.originalUrl
+      },
+      metadata: {
+        deletedUserId: user._id,
+        success: true
+      }
+    })
 
     res.json({
       success: true,
-      message: 'User deleted successfully'
+      message: 'User deleted successfully.'
     })
+
   } catch (error) {
     console.error('Delete user error:', error)
     res.status(500).json({
       success: false,
-      message: 'Server error while deleting user'
+      message: 'Server error.'
     })
   }
 })
 
-// @route   GET /api/users/:id/projects
-// @desc    Get user's projects
-// @access  Private (Admin or self)
-router.get('/:id/projects', auth, async (req, res) => {
-  try {
-    // Check if user is requesting their own projects or is admin
-    if (req.user.role !== 'admin' && req.user._id.toString() !== req.params.id) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied'
-      })
-    }
-
-    const user = await User.findById(req.params.id)
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      })
-    }
-
-    let projects
-    if (user.role === 'client') {
-      projects = await Project.find({ client: user._id })
-        .populate('client', 'firstName lastName email company')
-        .populate('projectManager', 'firstName lastName email')
-        .populate('team.user', 'firstName lastName email avatar')
-        .sort({ createdAt: -1 })
-    } else {
-      projects = await Project.find({
-        $or: [
-          { client: user._id },
-          { 'team.user': user._id },
-          { projectManager: user._id }
-        ]
-      })
-        .populate('client', 'firstName lastName email company')
-        .populate('projectManager', 'firstName lastName email')
-        .populate('team.user', 'firstName lastName email avatar')
-        .sort({ createdAt: -1 })
-    }
-
-    res.json({
-      success: true,
-      data: {
-        projects
-      }
-    })
-  } catch (error) {
-    console.error('Get user projects error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Server error while fetching user projects'
-    })
-  }
-})
-
-// @route   GET /api/users/:id/analytics
-// @desc    Get user analytics
-// @access  Private (Admin or self)
-router.get('/:id/analytics', auth, async (req, res) => {
-  try {
-    // Check if user is requesting their own analytics or is admin
-    if (req.user.role !== 'admin' && req.user._id.toString() !== req.params.id) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied'
-      })
-    }
-
-    const user = await User.findById(req.params.id)
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      })
-    }
-
-    // Get project statistics
-    const projectStats = await Project.aggregate([
-      {
-        $match: {
-          $or: [
-            { client: user._id },
-            { 'team.user': user._id },
-            { projectManager: user._id }
-          ]
-        }
-      },
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 },
-          totalBudget: { $sum: '$budget' },
-          totalActualCost: { $sum: '$actualCost' }
-        }
-      }
-    ])
-
-    // Get recent activity
-    const recentProjects = await Project.find({
-      $or: [
-        { client: user._id },
-        { 'team.user': user._id },
-        { projectManager: user._id }
-      ]
-    })
-      .sort({ lastActivity: -1 })
-      .limit(5)
-      .select('name status lastActivity')
-
-    res.json({
-      success: true,
-      data: {
-        projectStats,
-        recentProjects,
-        userRole: user.role,
-        memberSince: user.createdAt,
-        lastLogin: user.lastLogin
-      }
-    })
-  } catch (error) {
-    console.error('Get user analytics error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Server error while fetching user analytics'
-    })
-  }
-})
-
-// @route   POST /api/users/:id/permissions
-// @desc    Update user permissions (admin only)
-// @access  Private (Admin)
-router.post('/:id/permissions', [
-  auth,
-  authorize('admin'),
-  body('permissions')
-    .isArray()
-    .withMessage('Permissions must be an array'),
-  body('permissions.*')
-    .isIn([
-      'read_projects',
-      'write_projects',
-      'delete_projects',
-      'read_tasks',
-      'write_tasks',
-      'delete_tasks',
-      'manage_users',
-      'manage_billing',
-      'view_analytics'
-    ])
-    .withMessage('Invalid permission')
-], async (req, res) => {
-  try {
-    const errors = validationResult(req)
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      })
-    }
-
-    const { permissions } = req.body
-
-    const user = await User.findById(req.params.id)
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      })
-    }
-
-    user.permissions = permissions
-    await user.save()
-
-    res.json({
-      success: true,
-      message: 'User permissions updated successfully',
-      data: {
-        permissions: user.permissions
-      }
-    })
-  } catch (error) {
-    console.error('Update user permissions error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Server error while updating user permissions'
-    })
-  }
-})
-
-// @route   POST /api/users/:id/activate
-// @desc    Activate/deactivate user (admin only)
-// @access  Private (Admin)
-router.post('/:id/activate', [
-  auth,
-  authorize('admin'),
-  body('isActive')
-    .isBoolean()
-    .withMessage('isActive must be a boolean')
-], async (req, res) => {
-  try {
-    const errors = validationResult(req)
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      })
-    }
-
-    const { isActive } = req.body
-
-    const user = await User.findById(req.params.id)
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      })
-    }
-
-    user.isActive = isActive
-    await user.save()
-
-    res.json({
-      success: true,
-      message: `User ${isActive ? 'activated' : 'deactivated'} successfully`,
-      data: {
-        isActive: user.isActive
-      }
-    })
-  } catch (error) {
-    console.error('Activate/deactivate user error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Server error while updating user status'
-    })
-  }
-})
-
-/**
- * @swagger
- * /api/users/profile:
- *   get:
- *     summary: Get user profile
- *     description: Retrieve the current user's profile information
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Profile retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   type: object
- *                   properties:
- *                     user:
- *                       $ref: '#/components/schemas/User'
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *   put:
- *     summary: Update user profile
- *     description: Update the current user's profile information
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               firstName:
- *                 type: string
- *                 minLength: 2
- *                 maxLength: 50
- *                 example: "John"
- *               lastName:
- *                 type: string
- *                 minLength: 2
- *                 maxLength: 50
- *                 example: "Doe"
- *               phone:
- *                 type: string
- *                 example: "+1234567890"
- *               company:
- *                 type: string
- *                 maxLength: 100
- *                 example: "Acme Corp"
- *               position:
- *                 type: string
- *                 maxLength: 100
- *                 example: "Project Manager"
- *               bio:
- *                 type: string
- *                 maxLength: 500
- *                 example: "Experienced project manager with 5+ years in software development"
- *               avatar:
- *                 type: string
- *                 example: "https://example.com/avatar.jpg"
- *     responses:
- *       200:
- *         description: Profile updated successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: "Profile updated successfully"
- *                 data:
- *                   type: object
- *                   properties:
- *                     user:
- *                       $ref: '#/components/schemas/User'
- *       400:
- *         description: Validation error
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-
-// Get user profile
-router.get('/profile', auth, userController.getProfile)
-
-// Update user profile
-router.put('/profile', [
-  auth,
-  body('firstName')
-    .optional()
-    .trim()
-    .isLength({ min: 2, max: 50 })
-    .withMessage('First name must be between 2 and 50 characters'),
-  body('lastName')
-    .optional()
-    .trim()
-    .isLength({ min: 2, max: 50 })
-    .withMessage('Last name must be between 2 and 50 characters'),
-  body('phone')
-    .optional()
-    .trim()
-    .isLength({ max: 20 })
-    .withMessage('Phone number too long'),
-  body('company')
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage('Company name too long'),
-  body('position')
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage('Position too long'),
-  body('bio')
-    .optional()
-    .trim()
-    .isLength({ max: 500 })
-    .withMessage('Bio too long'),
-  body('avatar')
-    .optional()
-    .isURL()
-    .withMessage('Avatar must be a valid URL')
-], userController.updateProfile)
-
-/**
- * @swagger
- * /api/users/change-password:
- *   post:
- *     summary: Change password
- *     description: Change the current user's password
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - currentPassword
- *               - newPassword
- *             properties:
- *               currentPassword:
- *                 type: string
- *                 minLength: 8
- *                 example: "currentPassword123"
- *               newPassword:
- *                 type: string
- *                 minLength: 8
- *                 example: "newPassword123"
- *     responses:
- *       200:
- *         description: Password changed successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/SuccessResponse'
- *       400:
- *         description: Current password incorrect
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
+// ==================== PASSWORD MANAGEMENT ====================
 
 // Change password
-router.post('/change-password', [
-  auth,
-  body('currentPassword')
-    .isLength({ min: 8 })
-    .withMessage('Current password must be at least 8 characters'),
-  body('newPassword')
-    .isLength({ min: 8 })
-    .withMessage('New password must be at least 8 characters')
-], userController.changePassword)
+router.post('/:id/change-password', auth, hasPermission('manage_users'), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { newPassword, currentPassword } = req.body
 
-/**
- * @swagger
- * /api/users/dashboard:
- *   get:
- *     summary: Get user dashboard data
- *     description: Retrieve comprehensive dashboard data for the current user
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Dashboard data retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   type: object
- *                   properties:
- *                     projects:
- *                       type: array
- *                       items:
- *                         $ref: '#/components/schemas/Project'
- *                     tasks:
- *                       type: array
- *                       items:
- *                         $ref: '#/components/schemas/Task'
- *                     statistics:
- *                       type: object
- *                       properties:
- *                         totalProjects:
- *                           type: number
- *                         totalTasks:
- *                           type: number
- *                         completedTasks:
- *                           type: number
- *                         overdueTasks:
- *                           type: number
- *                         completionRate:
- *                           type: number
- *                     recentActivity:
- *                       type: array
- *                       items:
- *                         $ref: '#/components/schemas/Task'
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
+    if (!newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password is required.'
+      })
+    }
 
-// Get user dashboard data
-router.get('/dashboard', auth, userController.getDashboardData)
+    const query = { _id: id }
+    if (!req.user.isSuperAccount) {
+      query.vendor = req.vendorId
+    }
 
-/**
- * @swagger
- * /api/users/projects:
- *   get:
- *     summary: Get user's projects
- *     description: Retrieve all projects for the current user with filtering and pagination
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *           enum: [planning, active, completed, on-hold]
- *         description: Filter by project status
- *         example: "active"
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *           minimum: 1
- *           default: 1
- *         description: Page number for pagination
- *         example: 1
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           minimum: 1
- *           maximum: 100
- *           default: 10
- *         description: Number of items per page
- *         example: 10
- *     responses:
- *       200:
- *         description: User's projects retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   type: object
- *                   properties:
- *                     projects:
- *                       type: array
- *                       items:
- *                         $ref: '#/components/schemas/Project'
- *                     pagination:
- *                       type: object
- *                       properties:
- *                         page:
- *                           type: integer
- *                           example: 1
- *                         limit:
- *                           type: integer
- *                           example: 10
- *                         total:
- *                           type: integer
- *                           example: 25
- *                         pages:
- *                           type: integer
- *                           example: 3
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
+    const user = await User.findOne(query).select('+password')
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.'
+      })
+    }
 
-// Get user's projects
-router.get('/projects', [
-  auth,
-  query('status').optional().isIn(['planning', 'active', 'completed', 'on-hold']),
-  query('page').optional().isInt({ min: 1 }),
-  query('limit').optional().isInt({ min: 1, max: 100 })
-], userController.getUserProjects)
+    // If changing own password, require current password
+    if (user._id.toString() === req.user._id.toString()) {
+      if (!currentPassword) {
+        return res.status(400).json({
+          success: false,
+          message: 'Current password is required.'
+        })
+      }
 
-/**
- * @swagger
- * /api/users/tasks:
- *   get:
- *     summary: Get user's tasks
- *     description: Retrieve all tasks for the current user with filtering and pagination
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *           enum: [todo, in-progress, review, testing, done, blocked]
- *         description: Filter by task status
- *         example: "in-progress"
- *       - in: query
- *         name: priority
- *         schema:
- *           type: string
- *           enum: [low, medium, high, urgent]
- *         description: Filter by task priority
- *         example: "high"
- *       - in: query
- *         name: project
- *         schema:
- *           type: string
- *         description: Filter by project ID
- *         example: "507f1f77bcf86cd799439012"
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *           minimum: 1
- *           default: 1
- *         description: Page number for pagination
- *         example: 1
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           minimum: 1
- *           maximum: 100
- *           default: 10
- *         description: Number of items per page
- *         example: 10
- *     responses:
- *       200:
- *         description: User's tasks retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   type: object
- *                   properties:
- *                     tasks:
- *                       type: array
- *                       items:
- *                         $ref: '#/components/schemas/Task'
- *                     pagination:
- *                       type: object
- *                       properties:
- *                         page:
- *                           type: integer
- *                           example: 1
- *                         limit:
- *                           type: integer
- *                           example: 10
- *                         total:
- *                           type: integer
- *                           example: 25
- *                         pages:
- *                           type: integer
- *                           example: 3
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
+      const isCurrentPasswordValid = await user.comparePassword(currentPassword)
+      if (!isCurrentPasswordValid) {
+        return res.status(400).json({
+          success: false,
+          message: 'Current password is incorrect.'
+        })
+      }
+    }
 
-// Get user's tasks
-router.get('/tasks', [
-  auth,
-  query('status').optional().isIn(['todo', 'in-progress', 'review', 'testing', 'done', 'blocked']),
-  query('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
-  query('project').optional().isMongoId(),
-  query('page').optional().isInt({ min: 1 }),
-  query('limit').optional().isInt({ min: 1, max: 100 })
-], userController.getUserTasks)
+    // Validate password strength
+    if (newPassword.length < config.security.passwordMinLength) {
+      return res.status(400).json({
+        success: false,
+        message: `Password must be at least ${config.security.passwordMinLength} characters long.`
+      })
+    }
 
-/**
- * @swagger
- * /api/users/consent:
- *   post:
- *     summary: Update GDPR consent
- *     description: Update the user's GDPR consent preferences
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - consentType
- *               - granted
- *             properties:
- *               consentType:
- *                 type: string
- *                 enum: [marketing, analytics, necessary, thirdParty]
- *                 example: "marketing"
- *               granted:
- *                 type: boolean
- *                 example: true
- *     responses:
- *       200:
- *         description: Consent updated successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/SuccessResponse'
- *       400:
- *         description: Invalid consent type
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
+    // Check if password was recently used
+    if (user.isPasswordRecentlyUsed(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password was recently used. Please choose a different password.'
+      })
+    }
 
-// Update GDPR consent
-router.post('/consent', [
-  auth,
-  body('consentType')
-    .isIn(['marketing', 'analytics', 'necessary', 'thirdParty'])
-    .withMessage('Invalid consent type'),
-  body('granted')
-    .isBoolean()
-    .withMessage('Granted must be a boolean')
-], userController.updateConsent)
+    // Update password
+    await user.updatePassword(newPassword)
 
-/**
- * @swagger
- * /api/users/data-portability:
- *   post:
- *     summary: Request data portability
- *     description: Request a copy of the user's personal data (GDPR compliance)
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Data portability request submitted successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/SuccessResponse'
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
+    // Terminate all user sessions to force re-login
+    await sessionService.forceLogoutUser(user._id, user.vendor, 'Password changed')
 
-// Request data portability
-router.post('/data-portability', auth, userController.requestDataPortability)
+    // Log password change
+    await authService.logAuthEvent({
+      event: 'user.password.change',
+      userId: req.user._id,
+      vendorId: req.vendorId,
+      portalType: req.portalType,
+      request: {
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+        method: req.method,
+        url: req.originalUrl
+      },
+      metadata: {
+        targetUserId: user._id,
+        success: true
+      }
+    })
 
-/**
- * @swagger
- * /api/users/right-to-be-forgotten:
- *   post:
- *     summary: Request right to be forgotten
- *     description: Request data anonymization (GDPR compliance)
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Right to be forgotten request submitted successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/SuccessResponse'
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
+    res.json({
+      success: true,
+      message: 'Password changed successfully. User will need to login again.'
+    })
 
-// Request right to be forgotten
-router.post('/right-to-be-forgotten', auth, userController.requestRightToBeForgotten)
+  } catch (error) {
+    console.error('Change password error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
 
-/**
- * @swagger
- * /api/users/statistics:
- *   get:
- *     summary: Get user statistics
- *     description: Retrieve comprehensive statistics for the current user
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: startDate
- *         schema:
- *           type: string
- *           format: date
- *         description: Filter by start date
- *         example: "2024-01-01"
- *       - in: query
- *         name: endDate
- *         schema:
- *           type: string
- *           format: date
- *         description: Filter by end date
- *         example: "2024-12-31"
- *     responses:
- *       200:
- *         description: User statistics retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   type: object
- *                   properties:
- *                     totalProjects:
- *                       type: number
- *                       example: 5
- *                     totalTasks:
- *                       type: number
- *                       example: 25
- *                     completedTasks:
- *                       type: number
- *                       example: 18
- *                     overdueTasks:
- *                       type: number
- *                       example: 3
- *                     completionRate:
- *                       type: number
- *                       example: 72
- *                     projectStatusBreakdown:
- *                       type: array
- *                     taskStatusBreakdown:
- *                       type: array
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
+// ==================== SESSION MANAGEMENT ====================
 
-// Get user statistics
-router.get('/statistics', [
-  auth,
-  query('startDate').optional().isISO8601(),
-  query('endDate').optional().isISO8601()
-], userController.getUserStatistics)
+// Get user sessions
+router.get('/:id/sessions', auth, hasPermission('manage_users'), async (req, res) => {
+  try {
+    const { id } = req.params
+    const vendorId = req.user.isSuperAccount ? req.query.vendorId || req.vendorId : req.vendorId
+
+    const query = { _id: id }
+    if (!req.user.isSuperAccount) {
+      query.vendor = req.vendorId
+    }
+
+    const user = await User.findOne(query)
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.'
+      })
+    }
+
+    const sessions = await sessionService.getUserSessionActivity(user._id, vendorId)
+
+    res.json({
+      success: true,
+      data: {
+        sessions: sessions.map(session => ({
+          id: session.sessionId,
+          portalType: session.portalType,
+          deviceInfo: session.deviceInfo,
+          lastActivity: session.lastActivity,
+          loginTime: session.loginTime,
+          isActive: session.isActive,
+          riskScore: session.security.riskScore,
+          suspiciousActivity: session.security.suspiciousActivity
+        }))
+      }
+    })
+
+  } catch (error) {
+    console.error('Get user sessions error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// Force logout user from all sessions
+router.post('/:id/force-logout', auth, hasPermission('manage_users'), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { reason = 'Admin action' } = req.body
+
+    const query = { _id: id }
+    if (!req.user.isSuperAccount) {
+      query.vendor = req.vendorId
+    }
+
+    const user = await User.findOne(query)
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.'
+      })
+    }
+
+    const terminatedCount = await sessionService.forceLogoutUser(user._id, user.vendor, reason)
+
+    res.json({
+      success: true,
+      message: `User logged out from ${terminatedCount} sessions.`,
+      data: {
+        terminatedSessions: terminatedCount
+      }
+    })
+
+  } catch (error) {
+    console.error('Force logout error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// ==================== SECURITY MANAGEMENT ====================
+
+// Get user security info
+router.get('/:id/security', auth, hasPermission('manage_users'), async (req, res) => {
+  try {
+    const { id } = req.params
+
+    const query = { _id: id }
+    if (!req.user.isSuperAccount) {
+      query.vendor = req.vendorId
+    }
+
+    const user = await User.findOne(query)
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.'
+      })
+    }
+
+    // Get recent login attempts
+    const recentActivity = await AuditLog.findUserActivity(user._id, 20)
+
+    res.json({
+      success: true,
+      data: {
+        security: {
+          twoFactorEnabled: user.security.twoFactorEnabled,
+          failedAttempts: user.security.failedAttempts,
+          accountLockedUntil: user.security.accountLockedUntil,
+          passwordExpiresAt: user.security.passwordExpiresAt,
+          riskScore: user.security.riskScore,
+          suspiciousActivity: user.security.suspiciousActivity,
+          lastSuspiciousActivity: user.security.lastSuspiciousActivity
+        },
+        recentActivity: recentActivity.filter(log => 
+          log.event.includes('login') || log.event.includes('security')
+        )
+      }
+    })
+
+  } catch (error) {
+    console.error('Get user security error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// Unlock user account
+router.post('/:id/unlock', auth, hasPermission('manage_users'), async (req, res) => {
+  try {
+    const { id } = req.params
+
+    const query = { _id: id }
+    if (!req.user.isSuperAccount) {
+      query.vendor = req.vendorId
+    }
+
+    const user = await User.findOne(query)
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.'
+      })
+    }
+
+    if (!user.isAccountLocked()) {
+      return res.status(400).json({
+        success: false,
+        message: 'User account is not locked.'
+      })
+    }
+
+    await user.resetFailedAttempts()
+
+    // Log account unlock
+    await authService.logAuthEvent({
+      event: 'security.account.unlocked',
+      userId: req.user._id,
+      vendorId: req.vendorId,
+      portalType: req.portalType,
+      request: {
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+        method: req.method,
+        url: req.originalUrl
+      },
+      metadata: {
+        targetUserId: user._id,
+        success: true
+      }
+    })
+
+    res.json({
+      success: true,
+      message: 'User account unlocked successfully.'
+    })
+
+  } catch (error) {
+    console.error('Unlock user error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// ==================== ROLE-SPECIFIC ENDPOINTS ====================
+
+// Get users by role
+router.get('/role/:role', auth, hasPermission('manage_users'), async (req, res) => {
+  try {
+    const { role } = req.params
+    const { page = 1, limit = 10, search } = req.query
+
+    const query = { 
+      role,
+      vendor: req.vendorId
+    }
+
+    if (search) {
+      query.$or = [
+        { firstName: { $regex: search, $options: 'i' } },
+        { lastName: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } }
+      ]
+    }
+
+    // Super admin can see all users across vendors
+    if (req.user.role === 'super_admin' || req.user.isSuperAccount) {
+      delete query.vendor
+    }
+
+    const users = await User.find(query)
+      .select('-password')
+      .populate('vendor', 'name domain')
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+
+    const total = await User.countDocuments(query)
+
+    res.json({
+      success: true,
+      data: {
+        users,
+        role,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    })
+
+  } catch (error) {
+    console.error('Get users by role error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// Get current user profile
+router.get('/profile/me', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+      .select('-password')
+      .populate('vendor', 'name domain')
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.'
+      })
+    }
+
+    // Get user sessions
+    const sessions = await Session.findActiveSessions(user._id, user.vendor)
+
+    res.json({
+      success: true,
+      data: {
+        user,
+        activeSessions: sessions.length
+      }
+    })
+
+  } catch (error) {
+    console.error('Get profile error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
+
+// Update current user profile
+router.put('/profile/me', auth, async (req, res) => {
+  try {
+    const {
+      firstName,
+      lastName,
+      company,
+      position,
+      department,
+      phone,
+      preferences
+    } = req.body
+
+    const user = await User.findById(req.user._id)
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.'
+      })
+    }
+
+    // Update allowed fields
+    if (firstName) user.firstName = firstName
+    if (lastName) user.lastName = lastName
+    if (company !== undefined) user.company = company
+    if (position !== undefined) user.position = position
+    if (department !== undefined) user.department = department
+    if (phone !== undefined) user.phone = phone
+    if (preferences) user.preferences = { ...user.preferences, ...preferences }
+
+    await user.save()
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully.',
+      data: {
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          company: user.company,
+          position: user.position,
+          department: user.department,
+          phone: user.phone,
+          preferences: user.preferences
+        }
+      }
+    })
+
+  } catch (error) {
+    console.error('Update profile error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error.'
+    })
+  }
+})
 
 module.exports = router 

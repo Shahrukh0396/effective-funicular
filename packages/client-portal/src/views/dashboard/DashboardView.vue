@@ -149,8 +149,8 @@ const recentActivities = ref([
 ])
 
 onMounted(async () => {
-  // Fetch user data and other dashboard information
-  user.value = await authStore.getCurrentUser()
+  // Get user data from the store
+  user.value = authStore.user
   // Additional data fetching can be added here
 })
 </script> 

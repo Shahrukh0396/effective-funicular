@@ -1,0 +1,465 @@
+# Linton Client Portal - Super Admin Portal
+# .cursorrules file for Super Admin Portal implementation
+
+## Project Overview
+You are building the Super Admin Portal for the Linton Client Portal - the highest-level administrative interface that provides platform-wide oversight, cross-vendor analytics, system management, and business intelligence across the entire multi-tenant SaaS platform.
+
+## Technology Stack
+- Frontend: Vue.js 3 with Composition API, Pinia, Tailwind CSS
+- Backend: Node.js, Express.js, MongoDB with Mongoose
+- Real-time: Socket.io for live updates
+- Analytics: Chart.js, D3.js for data visualization
+- Authentication: JWT with super admin role verification
+- Monitoring: System health and performance monitoring
+- Reporting: PDF generation for executive reports
+
+## Core Features to Implement
+
+### 1. Platform-Wide Dashboard
+```vue
+<!-- SuperAdminDashboard.vue -->
+- Real-time platform health metrics
+- Total vendors, users, and projects across platform
+- Revenue analytics and growth trends
+- System performance indicators
+- Active user sessions and concurrent usage
+- Recent platform activities and alerts
+- Quick action buttons for common tasks
+- Executive summary widgets
+```
+
+### 2. Vendor Management System
+```vue
+<!-- VendorManagement.vue -->
+- Complete vendor directory with search and filters
+- Vendor onboarding status tracking
+- Subscription management and billing oversight
+- Vendor performance metrics and scoring
+- Vendor suspension and activation controls
+- Bulk vendor operations
+- Vendor support ticket management
+- Vendor compliance monitoring
+```
+
+### 3. Cross-Vendor Analytics
+```vue
+<!-- PlatformAnalytics.vue -->
+- Revenue analytics across all vendors
+- User growth and retention metrics
+- Feature adoption and usage analytics
+- Geographic distribution of users/vendors
+- Churn analysis and predictions
+- Comparative vendor performance
+- Platform-wide project success rates
+- Custom dashboard creation
+```
+
+### 4. User Management Across Platform
+```vue
+<!-- GlobalUserManagement.vue -->
+- Platform-wide user search and management
+- User role and permission oversight
+- Cross-vendor user activity monitoring
+- Bulk user operations
+- User authentication audit logs
+- Security incident management
+- User support ticket handling
+- Account verification management
+```
+
+### 5. System Health & Monitoring
+```vue
+<!-- SystemHealth.vue -->
+- Real-time system performance metrics
+- Database performance monitoring
+- API response time analytics
+- Error rate tracking and alerting
+- Server resource utilization
+- Third-party service status
+- Backup and recovery status
+- Security monitoring dashboard
+```
+
+### 6. Financial Overview & Billing
+```vue
+<!-- PlatformBilling.vue -->
+- Platform-wide revenue dashboard
+- Subscription analytics and forecasting
+- Payment processing metrics
+- Churn and retention analytics
+- Revenue per vendor analysis
+- Failed payment tracking
+- Refund and dispute management
+- Financial reporting and exports
+```
+
+### 7. Feature Flag Management
+```vue
+<!-- FeatureFlagManagement.vue -->
+- Global feature flag controls
+- Vendor-specific feature toggles
+- A/B test management
+- Feature rollout planning
+- Usage analytics per feature
+- Feature deprecation management
+- Emergency feature toggles
+- Feature adoption tracking
+```
+
+### 8. Support & Communication
+```vue
+<!-- PlatformSupport.vue -->
+- Cross-vendor support ticket management
+- Platform-wide announcements
+- Vendor communication center
+- System maintenance notifications
+- Emergency alert broadcasting
+- Support team performance metrics
+- Knowledge base management
+- Community forum oversight
+```
+
+## Database Schemas
+
+### PlatformMetrics Collection
+```javascript
+{
+  _id: ObjectId,
+  date: Date,
+  metrics: {
+    totalVendors: Number,
+    activeVendors: Number,
+    totalUsers: Number,
+    activeUsers: Number,
+    totalProjects: Number,
+    completedProjects: Number,
+    totalRevenue: Number,
+    monthlyRecurringRevenue: Number,
+    systemUptime: Number,
+    averageResponseTime: Number,
+    errorRate: Number,
+    storageUsage: Number,
+    bandwidthUsage: Number
+  },
+  vendorBreakdown: [{
+    vendorId: ObjectId,
+    users: Number,
+    projects: Number,
+    revenue: Number,
+    storageUsed: Number
+  }],
+  createdAt: Date
+}
+```
+
+### SystemAlerts Collection
+```javascript
+{
+  _id: ObjectId,
+  type: String, // 'error', 'warning', 'info', 'critical'
+  category: String, // 'system', 'security', 'billing', 'vendor'
+  title: String,
+  description: String,
+  severity: String, // 'low', 'medium', 'high', 'critical'
+  source: String, // component/service that generated alert
+  vendorId: ObjectId, // if vendor-specific
+  userId: ObjectId, // if user-specific
+  metadata: Object, // additional context data
+  status: String, // 'new', 'acknowledged', 'investigating', 'resolved'
+  assignedTo: ObjectId,
+  resolvedAt: Date,
+  resolutionNotes: String,
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+### FeatureFlags Collection
+```javascript
+{
+  _id: ObjectId,
+  name: String, // unique flag name
+  description: String,
+  key: String, // unique key for code reference
+  enabled: Boolean,
+  global: Boolean, // applies to all vendors
+  vendorIds: [ObjectId], // specific vendors if not global
+  userIds: [ObjectId], // specific users if needed
+  percentage: Number, // rollout percentage (0-100)
+  conditions: [{
+    type: String, // 'vendor_tier', 'user_role', 'signup_date'
+    operator: String, // 'equals', 'contains', 'greater_than'
+    value: String
+  }],
+  startDate: Date,
+  endDate: Date,
+  metadata: Object,
+  createdBy: ObjectId,
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+### PlatformAnnouncements Collection
+```javascript
+{
+  _id: ObjectId,
+  title: String,
+  content: String,
+  type: String, // 'maintenance', 'feature', 'security', 'general'
+  priority: String, // 'low', 'medium', 'high', 'urgent'
+  targetAudience: String, // 'all', 'vendors', 'users', 'admins'
+  vendorIds: [ObjectId], // if targeting specific vendors
+  channels: [String], // 'email', 'in_app', 'sms'
+  scheduled: Boolean,
+  scheduledFor: Date,
+  publishedAt: Date,
+  expiresAt: Date,
+  status: String, // 'draft', 'scheduled', 'published', 'archived'
+  metrics: {
+    sent: Number,
+    delivered: Number,
+    opened: Number,
+    clicked: Number
+  },
+  createdBy: ObjectId,
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+## API Endpoints
+
+### Platform Analytics
+```javascript
+// GET /api/super-admin/analytics/overview - Platform overview metrics
+// GET /api/super-admin/analytics/revenue - Revenue analytics
+// GET /api/super-admin/analytics/users - User growth and engagement
+// GET /api/super-admin/analytics/vendors - Vendor performance metrics
+// GET /api/super-admin/analytics/features - Feature usage analytics
+// GET /api/super-admin/analytics/custom - Custom report generation
+// POST /api/super-admin/analytics/export - Export analytics data
+```
+
+### Vendor Management
+```javascript
+// GET /api/super-admin/vendors - Get all vendors with filtering
+// GET /api/super-admin/vendors/:id - Get specific vendor details
+// PUT /api/super-admin/vendors/:id - Update vendor information
+// POST /api/super-admin/vendors/:id/suspend - Suspend vendor
+// POST /api/super-admin/vendors/:id/activate - Activate vendor
+// GET /api/super-admin/vendors/:id/analytics - Vendor-specific analytics
+// POST /api/super-admin/vendors/bulk-action - Bulk vendor operations
+```
+
+### System Management
+```javascript
+// GET /api/super-admin/system/health - System health metrics
+// GET /api/super-admin/system/alerts - Get system alerts
+// POST /api/super-admin/system/alerts/:id/acknowledge - Acknowledge alert
+// PUT /api/super-admin/system/alerts/:id/resolve - Resolve alert
+// GET /api/super-admin/system/logs - System logs with filtering
+// POST /api/super-admin/system/maintenance - Schedule maintenance
+```
+
+### Feature Flag Management
+```javascript
+// GET /api/super-admin/feature-flags - Get all feature flags
+// POST /api/super-admin/feature-flags - Create new feature flag
+// PUT /api/super-admin/feature-flags/:id - Update feature flag
+// DELETE /api/super-admin/feature-flags/:id - Delete feature flag
+// POST /api/super-admin/feature-flags/:id/toggle - Toggle feature flag
+// GET /api/super-admin/feature-flags/:id/analytics - Flag usage analytics
+```
+
+### User Management
+```javascript
+// GET /api/super-admin/users - Get all users across platform
+// GET /api/super-admin/users/:id - Get specific user details
+// PUT /api/super-admin/users/:id - Update user information
+// POST /api/super-admin/users/:id/impersonate - Impersonate user
+// GET /api/super-admin/users/:id/activity - User activity logs
+// POST /api/super-admin/users/bulk-action - Bulk user operations
+```
+
+## Frontend Components Structure
+
+```
+src/
+├── pages/
+│   ├── SuperAdminDashboard.vue
+│   ├── VendorManagement.vue
+│   ├── PlatformAnalytics.vue
+│   ├── GlobalUserManagement.vue
+│   ├── SystemHealth.vue
+│   ├── PlatformBilling.vue
+│   ├── FeatureFlagManagement.vue
+│   ├── PlatformSupport.vue
+│   ├── SystemLogs.vue
+│   └── ExecutiveReports.vue
+├── components/
+│   ├── dashboard/
+│   │   ├── MetricCard.vue
+│   │   ├── RevenueChart.vue
+│   │   ├── UserGrowthChart.vue
+│   │   ├── SystemHealthIndicator.vue
+│   │   └── RecentActivity.vue
+│   ├── vendors/
+│   │   ├── VendorTable.vue
+│   │   ├── VendorCard.vue
+│   │   ├── VendorDetails.vue
+│   │   ├── VendorMetrics.vue
+│   │   └── BulkActions.vue
+│   ├── analytics/
+│   │   ├── AnalyticsChart.vue
+│   │   ├── MetricsTable.vue
+│   │   ├── FilterPanel.vue
+│   │   ├── ExportDialog.vue
+│   │   └── CustomDashboard.vue
+│   ├── users/
+│   │   ├── UserTable.vue
+│   │   ├── UserDetails.vue
+│   │   ├── ActivityTimeline.vue
+│   │   └── UserActions.vue
+│   ├── system/
+│   │   ├── HealthMetrics.vue
+│   │   ├── AlertsList.vue
+│   │   ├── LogViewer.vue
+│   │   ├── MaintenanceScheduler.vue
+│   │   └── ServiceStatus.vue
+│   ├── features/
+│   │   ├── FeatureFlagTable.vue
+│   │   ├── FlagEditor.vue
+│   │   ├── RolloutManager.vue
+│   │   └── FlagAnalytics.vue
+│   └── common/
+│       ├── DataTable.vue
+│       ├── SearchFilter.vue
+│       ├── ExportButton.vue
+│       ├── DateRangePicker.vue
+│       └── ConfirmDialog.vue
+```
+
+## Key Implementation Guidelines
+
+### 1. Real-time Monitoring
+```javascript
+// Implement real-time updates for:
+- System health metrics
+- Active user counts
+- Revenue updates
+- Alert notifications
+- Vendor status changes
+- Performance metrics
+- Error tracking
+```
+
+### 2. Advanced Analytics
+```javascript
+// Implement comprehensive analytics:
+- Time-series data visualization
+- Comparative analysis tools
+- Predictive analytics
+- Custom metric creation
+- Automated reporting
+- Data export capabilities
+- Interactive dashboards
+```
+
+### 3. Multi-Level Permissions
+```javascript
+// Super admin role hierarchy:
+- Platform owner (full access)
+- System administrator (tech focus)
+- Business analyst (analytics focus)
+- Support manager (support focus)
+- Read-only observer
+- Emergency access roles
+```
+
+### 4. Audit Logging
+```javascript
+// Log all super admin actions:
+- Vendor management actions
+- User modifications
+- System configuration changes
+- Feature flag updates
+- Data exports
+- Emergency actions
+- Login/logout events
+```
+
+### 5. Emergency Procedures
+```javascript
+// Emergency response capabilities:
+- System-wide alerts
+- Emergency maintenance mode
+- Bulk vendor notifications
+- Immediate feature disabling
+- Security incident response
+- Data breach protocols
+- Escalation procedures
+```
+
+### 6. Business Intelligence
+```javascript
+// Advanced BI features:
+- Executive dashboards
+- Predictive analytics
+- Churn prediction models
+- Revenue forecasting
+- Market analysis tools
+- Competitive insights
+- Growth opportunity identification
+```
+
+### 7. Automated Reporting
+```javascript
+// Scheduled report generation:
+- Daily operational reports
+- Weekly performance summaries
+- Monthly business reviews
+- Quarterly executive reports
+- Annual platform analytics
+- Custom report scheduling
+- Alert-based reporting
+```
+
+## Security Considerations
+- Multi-factor authentication required
+- IP whitelisting for super admin access
+- Session timeout policies
+- Audit trail for all actions
+- Sensitive data encryption
+- Role-based access controls
+- Security incident logging
+- Emergency access procedures
+
+## Performance Requirements
+- Dashboard loading time < 2 seconds
+- Real-time data refresh rates
+- Efficient data aggregation queries
+- Caching strategies for heavy analytics
+- Pagination for large datasets
+- Progressive data loading
+- Optimized chart rendering
+
+## Monitoring & Alerting
+- System performance thresholds
+- Business metric alerts
+- Security event notifications
+- Vendor health monitoring
+- Revenue target tracking
+- User engagement alerts
+- Technical issue escalation
+
+## Data Privacy & Compliance
+- GDPR compliance for user data
+- SOC 2 audit requirements
+- Data retention policies
+- Cross-border data transfer rules
+- Vendor data isolation verification
+- Privacy impact assessments
+- Data breach notification procedures
+
+Remember: This portal provides the highest level of system oversight. Focus on actionable insights, proactive monitoring, and emergency response capabilities. Every feature should support data-driven decision making and platform optimization.

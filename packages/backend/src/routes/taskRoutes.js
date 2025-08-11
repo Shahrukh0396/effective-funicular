@@ -240,6 +240,55 @@ router.get('/', [
   query('limit').optional().isInt({ min: 1, max: 100 })
 ], taskController.getTasks)
 
+// Get tasks by project
+router.get('/project/:projectId', auth, async (req, res) => {
+  try {
+    const { projectId } = req.params
+    
+    // Verify project exists and user has access
+    const project = await Project.findById(projectId)
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found'
+      })
+    }
+
+    // Check access permissions
+    const canAccess = req.user.role === 'vendor_admin' || req.user.role === 'super_admin' ||
+                     project.clientId?.toString() === req.user._id.toString() ||
+                     project.team?.some(member => member.user?.toString() === req.user._id.toString()) ||
+                     project.projectManager?.toString() === req.user._id.toString()
+
+    if (!canAccess) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You do not have permission to view tasks for this project.'
+      })
+    }
+
+    // Get tasks for the project
+    const tasks = await Task.find({ project: projectId })
+      .populate('assignedTo', 'firstName lastName email avatar')
+      .populate('createdBy', 'firstName lastName email avatar')
+      .populate('comments.author', 'firstName lastName email avatar')
+      .sort({ createdAt: -1 })
+
+    res.json({
+      success: true,
+      data: {
+        tasks
+      }
+    })
+  } catch (error) {
+    console.error('Get tasks by project error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching tasks'
+    })
+  }
+})
+
 /**
  * @swagger
  * /api/tasks/available:
@@ -556,6 +605,79 @@ router.put('/:id', [
 
 // Delete task with access control
 router.delete('/:id', auth, taskController.deleteTask)
+
+// Update task status (for drag and drop)
+router.patch('/:id/status', [
+  auth,
+  body('status')
+    .isIn(['todo', 'in-progress', 'review', 'testing', 'done', 'blocked'])
+    .withMessage('Valid status is required')
+], async (req, res) => {
+  try {
+    const { id } = req.params
+    const { status } = req.body
+
+    const task = await Task.findById(id)
+      .populate('project', 'name status clientId team projectManager')
+
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      })
+    }
+
+    // Check permissions
+    const project = task.project
+    const canUpdate = req.user.role === 'vendor_admin' || req.user.role === 'super_admin' ||
+                     task.assignedTo?.toString() === req.user._id.toString() ||
+                     task.createdBy?.toString() === req.user._id.toString() ||
+                     project.clientId?.toString() === req.user._id.toString() ||
+                     project.team?.some(member => member.user?.toString() === req.user._id.toString()) ||
+                     project.projectManager?.toString() === req.user._id.toString()
+
+    if (!canUpdate) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You do not have permission to update this task.'
+      })
+    }
+
+    // Update status and handle timestamps
+    const updates = { status }
+    
+    if (status === 'in-progress' && task.status === 'todo') {
+      updates.startedAt = new Date()
+    } else if (status === 'done' && task.status !== 'done') {
+      updates.completedAt = new Date()
+    }
+
+    const updatedTask = await Task.findByIdAndUpdate(
+      id,
+      updates,
+      { new: true, runValidators: true }
+    )
+    .populate('assignedTo', 'firstName lastName email avatar')
+    .populate('createdBy', 'firstName lastName email avatar')
+
+    // Update project metrics
+    await Task.updateProjectMetrics(task.project._id)
+
+    res.json({
+      success: true,
+      message: 'Task status updated successfully',
+      data: {
+        task: updatedTask
+      }
+    })
+  } catch (error) {
+    console.error('Update task status error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error while updating task status'
+    })
+  }
+})
 
 /**
  * @swagger

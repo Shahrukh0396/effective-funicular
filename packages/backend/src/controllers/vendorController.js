@@ -1,156 +1,37 @@
 const Vendor = require('../models/Vendor')
 const User = require('../models/User')
-const jwt = require('jsonwebtoken')
-const config = require('../config')
-const { sendEmail } = require('../services/emailService')
-const crypto = require('crypto')
+const Project = require('../models/Project')
+const Task = require('../models/Task')
 
-// Vendor registration
-const registerVendor = async (req, res) => {
+// Get all vendors (super admin only)
+const getAllVendors = async (req, res) => {
   try {
-    const {
-      companyName,
-      slug,
-      email,
-      password,
-      contactPerson,
-      industry,
-      companySize,
-      website,
-      description
-    } = req.body
-
-    // Check if vendor already exists
-    const existingVendor = await Vendor.findOne({
-      $or: [{ email: email.toLowerCase() }, { slug: slug.toLowerCase() }]
-    })
-
-    if (existingVendor) {
-      return res.status(400).json({
-        success: false,
-        message: 'Vendor with this email or slug already exists'
-      })
-    }
-
-    // Create vendor
-    const vendor = new Vendor({
-      companyName,
-      slug: slug.toLowerCase(),
-      email: email.toLowerCase(),
-      password,
-      contactPerson,
-      industry,
-      companySize,
-      website,
-      description
-    })
-
-    await vendor.save()
-
-    // Generate verification token
-    const verificationToken = crypto.randomBytes(32).toString('hex')
-    vendor.emailVerificationToken = verificationToken
-    vendor.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
-    await vendor.save()
-
-    // Send verification email
-    const verificationUrl = `${config.clientUrl}/verify-email?token=${verificationToken}`
-    await sendEmail({
-      to: vendor.email,
-      subject: 'Welcome to Linton Portals - Verify Your Email',
-      template: 'vendor-welcome',
-      data: {
-        companyName: vendor.companyName,
-        contactName: vendor.contactFullName,
-        verificationUrl,
-        trialDays: vendor.trialDaysLeft
-      }
-    })
-
-    // Generate auth token
-    const token = vendor.generateAuthToken()
-
-    res.status(201).json({
-      success: true,
-      message: 'Vendor registered successfully',
-      data: {
-        vendor: vendor.getPublicProfile(),
-        token
-      }
-    })
-  } catch (error) {
-    console.error('Vendor registration error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Error registering vendor',
-      error: error.message
-    })
-  }
-}
-
-// Vendor login
-const loginVendor = async (req, res) => {
-  try {
-    const { email, password } = req.body
-
-    // Find vendor by email
-    const vendor = await Vendor.findOne({ email: email.toLowerCase() })
-
-    if (!vendor) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials'
-      })
-    }
-
-    // Check if vendor is active
-    if (!vendor.isActive) {
-      return res.status(401).json({
-        success: false,
-        message: 'Account is deactivated'
-      })
-    }
-
-    // Verify password
-    const isPasswordValid = await vendor.comparePassword(password)
-    if (!isPasswordValid) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials'
-      })
-    }
-
-    // Update last login
-    vendor.lastLogin = new Date()
-    vendor.lastActivity = new Date()
-    await vendor.save()
-
-    // Generate auth token
-    const token = vendor.generateAuthToken()
+    const vendors = await Vendor.find()
+      .select('-password -emailVerificationToken -emailVerificationExpires')
+      .populate('parentVendor', 'companyName domain')
+      .populate('whiteLabelSettings.whiteLabelCreatedBy', 'firstName lastName email')
+      .sort({ createdAt: -1 })
 
     res.json({
       success: true,
-      message: 'Login successful',
-      data: {
-        vendor: vendor.getPublicProfile(),
-        token
-      }
+      data: vendors
     })
   } catch (error) {
-    console.error('Vendor login error:', error)
+    console.error('Get all vendors error:', error)
     res.status(500).json({
       success: false,
-      message: 'Error logging in',
-      error: error.message
+      message: 'Error fetching vendors'
     })
   }
 }
 
-// Get vendor profile
-const getVendorProfile = async (req, res) => {
+// Get vendor by ID
+const getVendorById = async (req, res) => {
   try {
-    const vendor = await Vendor.findById(req.vendorId)
+    const vendor = await Vendor.findById(req.params.id)
       .select('-password -emailVerificationToken -emailVerificationExpires')
+      .populate('parentVendor', 'companyName domain')
+      .populate('whiteLabelSettings.whiteLabelCreatedBy', 'firstName lastName email')
 
     if (!vendor) {
       return res.status(404).json({
@@ -164,20 +45,99 @@ const getVendorProfile = async (req, res) => {
       data: vendor
     })
   } catch (error) {
-    console.error('Get vendor profile error:', error)
+    console.error('Get vendor by ID error:', error)
     res.status(500).json({
       success: false,
-      message: 'Error fetching vendor profile',
-      error: error.message
+      message: 'Error fetching vendor'
     })
   }
 }
 
-// Update vendor profile
-const updateVendorProfile = async (req, res) => {
+// Create white-label vendor
+const createWhiteLabelVendor = async (req, res) => {
   try {
-    const vendor = await Vendor.findById(req.vendorId)
+    const {
+      name,
+      domain,
+      email,
+      password,
+      contactPerson,
+      industry,
+      companySize,
+      website,
+      description,
+      branding,
+      subscription,
+      whiteLabelSettings
+    } = req.body
 
+    // Check if domain already exists
+    const existingVendor = await Vendor.findOne({ domain })
+    if (existingVendor) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vendor domain already exists'
+      })
+    }
+
+    // Check if email already exists
+    const existingEmail = await Vendor.findOne({ email })
+    if (existingEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email already exists'
+      })
+    }
+
+    // Create white-label vendor
+    const whiteLabelVendor = new Vendor({
+      name,
+      domain,
+      email,
+      password,
+      contactPerson,
+      industry,
+      companySize,
+      website,
+      description,
+      branding: {
+        ...branding,
+        whiteLabel: true
+      },
+      subscription: {
+        ...subscription,
+        plan: 'white-label',
+        status: 'active'
+      },
+      clientType: 'white-label-client',
+      whiteLabelSettings: {
+        isWhiteLabelClient: true,
+        whiteLabelCreatedBy: req.user._id,
+        whiteLabelCreatedAt: new Date(),
+        whiteLabelStatus: 'active'
+      }
+    })
+
+    await whiteLabelVendor.save()
+
+    res.status(201).json({
+      success: true,
+      message: 'White-label vendor created successfully',
+      data: whiteLabelVendor.getPublicProfile()
+    })
+  } catch (error) {
+    console.error('Create white-label vendor error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error creating white-label vendor'
+    })
+  }
+}
+
+// Update vendor
+const updateVendor = async (req, res) => {
+  try {
+    const vendor = await Vendor.findById(req.params.id)
     if (!vendor) {
       return res.status(404).json({
         success: false,
@@ -186,46 +146,38 @@ const updateVendorProfile = async (req, res) => {
     }
 
     // Update allowed fields
-    const allowedUpdates = [
-      'companyName',
-      'contactPerson',
-      'industry',
-      'companySize',
-      'website',
-      'description',
-      'branding',
-      'settings'
+    const allowedFields = [
+      'companyName', 'contactPerson', 'industry', 'companySize',
+      'website', 'description', 'branding', 'subscription',
+      'limits', 'settings', 'whiteLabelSettings'
     ]
 
-    allowedUpdates.forEach(field => {
+    allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {
         vendor[field] = req.body[field]
       }
     })
 
-    vendor.lastActivity = new Date()
     await vendor.save()
 
     res.json({
       success: true,
-      message: 'Profile updated successfully',
+      message: 'Vendor updated successfully',
       data: vendor.getPublicProfile()
     })
   } catch (error) {
-    console.error('Update vendor profile error:', error)
+    console.error('Update vendor error:', error)
     res.status(500).json({
       success: false,
-      message: 'Error updating vendor profile',
-      error: error.message
+      message: 'Error updating vendor'
     })
   }
 }
 
-// Get vendor dashboard stats
-const getVendorDashboard = async (req, res) => {
+// Delete vendor
+const deleteVendor = async (req, res) => {
   try {
-    const vendor = await Vendor.findById(req.vendorId)
-
+    const vendor = await Vendor.findById(req.params.id)
     if (!vendor) {
       return res.status(404).json({
         success: false,
@@ -233,119 +185,39 @@ const getVendorDashboard = async (req, res) => {
       })
     }
 
-    // Get user counts
-    const agentCount = await User.countDocuments({
-      vendor: req.vendorId,
-      role: 'employee'
-    })
-
-    const contractorCount = await User.countDocuments({
-      vendor: req.vendorId,
-      role: 'client'
-    })
-
-    // Get project stats
-    const Project = require('../models/Project')
-    const projectStats = await Project.aggregate([
-      { $match: { vendor: vendor._id } },
-      {
-        $group: {
-          _id: null,
-          totalProjects: { $sum: 1 },
-          activeProjects: {
-            $sum: {
-              $cond: [
-                { $in: ['$status', ['planning', 'in-progress', 'review', 'testing']] },
-                1,
-                0
-              ]
-            }
-          },
-          completedProjects: {
-            $sum: {
-              $cond: [{ $eq: ['$status', 'completed'] }, 1, 0]
-            }
-          }
-        }
-      }
+    // Check if vendor has associated data
+    const [userCount, projectCount, taskCount] = await Promise.all([
+      User.countDocuments({ vendorId: vendor._id }),
+      Project.countDocuments({ vendorId: vendor._id }),
+      Task.countDocuments({ vendorId: vendor._id })
     ])
 
-    const stats = projectStats[0] || {
-      totalProjects: 0,
-      activeProjects: 0,
-      completedProjects: 0
-    }
-
-    // Calculate revenue (placeholder for now)
-    const revenue = vendor.metrics.totalRevenue
-
-    res.json({
-      success: true,
-      data: {
-        vendor: vendor.getPublicProfile(),
-        stats: {
-          agents: agentCount,
-          contractors: contractorCount,
-          projects: stats.totalProjects,
-          activeProjects: stats.activeProjects,
-          completedProjects: stats.completedProjects,
-          revenue,
-          trialDaysLeft: vendor.trialDaysLeft,
-          usage: vendor.usagePercentage
-        }
-      }
-    })
-  } catch (error) {
-    console.error('Get vendor dashboard error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching dashboard',
-      error: error.message
-    })
-  }
-}
-
-// Verify vendor email
-const verifyVendorEmail = async (req, res) => {
-  try {
-    const { token } = req.body
-
-    const vendor = await Vendor.findOne({
-      emailVerificationToken: token,
-      emailVerificationExpires: { $gt: Date.now() }
-    })
-
-    if (!vendor) {
+    if (userCount > 0 || projectCount > 0 || taskCount > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid or expired verification token'
+        message: 'Cannot delete vendor with associated data. Please delete all associated data first.'
       })
     }
 
-    vendor.isEmailVerified = true
-    vendor.emailVerificationToken = undefined
-    vendor.emailVerificationExpires = undefined
-    await vendor.save()
+    await Vendor.findByIdAndDelete(req.params.id)
 
     res.json({
       success: true,
-      message: 'Email verified successfully'
+      message: 'Vendor deleted successfully'
     })
   } catch (error) {
-    console.error('Verify vendor email error:', error)
+    console.error('Delete vendor error:', error)
     res.status(500).json({
       success: false,
-      message: 'Error verifying email',
-      error: error.message
+      message: 'Error deleting vendor'
     })
   }
 }
 
-// Resend verification email
-const resendVerificationEmail = async (req, res) => {
+// Get vendor statistics
+const getVendorStats = async (req, res) => {
   try {
-    const vendor = await Vendor.findById(req.vendorId)
-
+    const vendor = await Vendor.findById(req.params.id)
     if (!vendor) {
       return res.status(404).json({
         success: false,
@@ -353,78 +225,43 @@ const resendVerificationEmail = async (req, res) => {
       })
     }
 
-    if (vendor.isEmailVerified) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email is already verified'
+    const [userCount, projectCount, taskCount, activeProjects] = await Promise.all([
+      User.countDocuments({ vendorId: vendor._id }),
+      Project.countDocuments({ vendorId: vendor._id }),
+      Task.countDocuments({ vendorId: vendor._id }),
+      Project.countDocuments({ 
+        vendorId: vendor._id, 
+        status: { $in: ['active', 'in_progress'] } 
       })
+    ])
+
+    const stats = {
+      users: userCount,
+      projects: projectCount,
+      tasks: taskCount,
+      activeProjects,
+      subscription: vendor.subscription,
+      usage: vendor.usage,
+      limits: vendor.limits
     }
 
-    // Generate new verification token
-    const verificationToken = crypto.randomBytes(32).toString('hex')
-    vendor.emailVerificationToken = verificationToken
-    vendor.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
-    await vendor.save()
-
-    // Send verification email
-    const verificationUrl = `${config.clientUrl}/verify-email?token=${verificationToken}`
-    await sendEmail({
-      to: vendor.email,
-      subject: 'Verify Your Email - Linton Portals',
-      template: 'vendor-verification',
-      data: {
-        companyName: vendor.companyName,
-        contactName: vendor.contactFullName,
-        verificationUrl
-      }
-    })
-
     res.json({
       success: true,
-      message: 'Verification email sent successfully'
+      data: stats
     })
   } catch (error) {
-    console.error('Resend verification email error:', error)
+    console.error('Get vendor stats error:', error)
     res.status(500).json({
       success: false,
-      message: 'Error sending verification email',
-      error: error.message
+      message: 'Error fetching vendor statistics'
     })
   }
 }
 
-// Check vendor slug availability
-const checkSlugAvailability = async (req, res) => {
+// Update vendor subscription
+const updateVendorSubscription = async (req, res) => {
   try {
-    const { slug } = req.params
-
-    const existingVendor = await Vendor.findOne({ slug: slug.toLowerCase() })
-
-    res.json({
-      success: true,
-      data: {
-        available: !existingVendor,
-        slug: slug.toLowerCase()
-      }
-    })
-  } catch (error) {
-    console.error('Check slug availability error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Error checking slug availability',
-      error: error.message
-    })
-  }
-}
-
-// Get vendor branding
-const getVendorBranding = async (req, res) => {
-  try {
-    const { slug } = req.params
-
-    const vendor = await Vendor.findOne({ slug: slug.toLowerCase() })
-      .select('companyName branding')
-
+    const vendor = await Vendor.findById(req.params.id)
     if (!vendor) {
       return res.status(404).json({
         success: false,
@@ -432,31 +269,82 @@ const getVendorBranding = async (req, res) => {
       })
     }
 
+    const { plan, status, currentPeriodStart, currentPeriodEnd } = req.body
+
+    if (plan) vendor.subscription.plan = plan
+    if (status) vendor.subscription.status = status
+    if (currentPeriodStart) vendor.subscription.currentPeriodStart = currentPeriodStart
+    if (currentPeriodEnd) vendor.subscription.currentPeriodEnd = currentPeriodEnd
+
+    await vendor.save()
+
     res.json({
       success: true,
-      data: {
-        companyName: vendor.branding.companyName || vendor.companyName,
-        branding: vendor.branding
-      }
+      message: 'Vendor subscription updated successfully',
+      data: vendor.subscription
     })
   } catch (error) {
-    console.error('Get vendor branding error:', error)
+    console.error('Update vendor subscription error:', error)
     res.status(500).json({
       success: false,
-      message: 'Error fetching vendor branding',
-      error: error.message
+      message: 'Error updating vendor subscription'
+    })
+  }
+}
+
+// Get white-label vendors only
+const getWhiteLabelVendors = async (req, res) => {
+  try {
+    const whiteLabelVendors = await Vendor.find({
+      'whiteLabelSettings.isWhiteLabelClient': true
+    })
+      .select('-password -emailVerificationToken -emailVerificationExpires')
+      .populate('whiteLabelSettings.whiteLabelCreatedBy', 'firstName lastName email')
+      .sort({ createdAt: -1 })
+
+    res.json({
+      success: true,
+      data: whiteLabelVendors
+    })
+  } catch (error) {
+    console.error('Get white-label vendors error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching white-label vendors'
+    })
+  }
+}
+
+// Get Linton-Tech clients only
+const getLintonTechClients = async (req, res) => {
+  try {
+    const lintonTechClients = await Vendor.find({
+      clientType: 'linton-tech-client'
+    })
+      .select('-password -emailVerificationToken -emailVerificationExpires')
+      .sort({ createdAt: -1 })
+
+    res.json({
+      success: true,
+      data: lintonTechClients
+    })
+  } catch (error) {
+    console.error('Get Linton-Tech clients error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching Linton-Tech clients'
     })
   }
 }
 
 module.exports = {
-  registerVendor,
-  loginVendor,
-  getVendorProfile,
-  updateVendorProfile,
-  getVendorDashboard,
-  verifyVendorEmail,
-  resendVerificationEmail,
-  checkSlugAvailability,
-  getVendorBranding
+  getAllVendors,
+  getVendorById,
+  createWhiteLabelVendor,
+  updateVendor,
+  deleteVendor,
+  getVendorStats,
+  updateVendorSubscription,
+  getWhiteLabelVendors,
+  getLintonTechClients
 } 

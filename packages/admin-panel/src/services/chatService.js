@@ -1,23 +1,7 @@
-import axios from 'axios'
+import axios from '../config/axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
-
-// Create axios instance with auth headers
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json'
-  }
-})
-
-// Add auth token to requests
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
+// Use the centralized axios configuration
+const api = axios
 
 const chatService = {
   // Get all conversations for the current user
@@ -59,7 +43,7 @@ const chatService = {
   // Send a file message
   async sendFileMessage(formData) {
     try {
-      const response = await api.post('/chat/messages/file', formData, {
+      const response = await api.post('/chat/messages/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -138,7 +122,11 @@ const chatService = {
   // Get available users for new conversations
   async getAvailableUsers() {
     try {
+      console.log('🔍 Chat Service - Fetching available users...')
+      console.log('🔍 Chat Service - Auth token:', !!localStorage.getItem('admin_token'))
+      
       const response = await api.get('/chat/users')
+      console.log('🔍 Chat Service - Available users response:', response)
       return response
     } catch (error) {
       console.error('Error fetching available users:', error)

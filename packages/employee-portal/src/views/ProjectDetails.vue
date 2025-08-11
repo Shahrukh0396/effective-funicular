@@ -93,27 +93,27 @@
         <div class="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-3">
           <div class="bg-gray-50 p-4 rounded-lg">
             <h3 class="text-sm font-medium text-gray-500">Timeline</h3>
-            <p class="mt-1 text-sm text-gray-900">Start: {{ formatDate(project.startDate) }}</p>
-            <p class="mt-1 text-sm text-gray-900">Due: {{ formatDate(project.dueDate) }}</p>
-            <p v-if="project.estimatedDuration" class="mt-1 text-sm text-gray-900">Duration: {{ project.estimatedDuration }}</p>
+            <p class="mt-1 text-sm text-gray-900">Start: {{ formatDate(project.timeline?.startDate) }}</p>
+            <p class="mt-1 text-sm text-gray-900">Due: {{ formatDate(project.timeline?.endDate) }}</p>
+            <p v-if="project.duration" class="mt-1 text-sm text-gray-900">Duration: {{ project.duration }} days</p>
           </div>
           <div class="bg-gray-50 p-4 rounded-lg">
             <h3 class="text-sm font-medium text-gray-500">Project Info</h3>
-            <p class="mt-1 text-sm text-gray-900">Budget: {{ project.budgetRange || 'Not specified' }}</p>
+            <p class="mt-1 text-sm text-gray-900">Budget: {{ project.budget?.estimated ? `$${project.budget.estimated.toLocaleString()}` : 'Not specified' }}</p>
             <p class="mt-1 text-sm text-gray-900">Team Size: {{ project.teamSize || 'Not specified' }}</p>
-            <p class="mt-1 text-sm text-gray-900">Manager: {{ project.projectManager || 'Not specified' }}</p>
+            <p class="mt-1 text-sm text-gray-900">Manager: {{ project.team?.projectManager?.firstName }} {{ project.team?.projectManager?.lastName }}</p>
           </div>
           <div class="bg-gray-50 p-4 rounded-lg">
             <h3 class="text-sm font-medium text-gray-500">Team</h3>
-            <p class="mt-1 text-sm text-gray-900">{{ project.team.length }} members</p>
+            <p class="mt-1 text-sm text-gray-900">{{ project.team?.members?.length || 0 }} members</p>
             <div class="mt-2 flex -space-x-2">
               <div
-                v-for="(member, index) in project.team.slice(0, 5)"
+                v-for="(member, index) in (project.team?.members || []).slice(0, 5)"
                 :key="index"
                 class="h-8 w-8 rounded-full bg-gray-200 border-2 border-white flex items-center justify-center"
-                :title="`${member.name} (${member.role})`"
+                :title="`${member.user?.firstName} ${member.user?.lastName} (${member.role})`"
               >
-                <span class="text-xs font-medium text-gray-600">{{ member.initials }}</span>
+                <span class="text-xs font-medium text-gray-600">{{ getInitials(member.user?.firstName || '', member.user?.lastName || '') }}</span>
               </div>
             </div>
           </div>
@@ -129,47 +129,47 @@
           <div>
             <h3 class="text-sm font-medium text-gray-700 mb-2">Business Requirements</h3>
             <div class="bg-gray-50 p-4 rounded-lg">
-              <p class="text-sm text-gray-900 whitespace-pre-wrap">{{ project.businessRequirements || 'No business requirements specified' }}</p>
+              <p class="text-sm text-gray-900 whitespace-pre-wrap">{{ project.requirements?.business?.join(', ') || 'No business requirements specified' }}</p>
             </div>
           </div>
           
           <div>
             <h3 class="text-sm font-medium text-gray-700 mb-2">Functional Requirements</h3>
             <div class="bg-gray-50 p-4 rounded-lg">
-              <p class="text-sm text-gray-900 whitespace-pre-wrap">{{ project.functionalRequirements || 'No functional requirements specified' }}</p>
+              <p class="text-sm text-gray-900 whitespace-pre-wrap">{{ project.requirements?.functional?.join(', ') || 'No functional requirements specified' }}</p>
             </div>
           </div>
           
-          <div v-if="project.nonFunctionalRequirements">
+          <div v-if="project.requirements?.nonFunctional?.length">
             <h3 class="text-sm font-medium text-gray-700 mb-2">Non-Functional Requirements</h3>
             <div class="bg-gray-50 p-4 rounded-lg">
-              <p class="text-sm text-gray-900 whitespace-pre-wrap">{{ project.nonFunctionalRequirements }}</p>
+              <p class="text-sm text-gray-900 whitespace-pre-wrap">{{ project.requirements.nonFunctional.join(', ') }}</p>
             </div>
           </div>
           
-          <div v-if="project.technicalSpecifications">
+          <div v-if="project.requirements?.technical?.length">
             <h3 class="text-sm font-medium text-gray-700 mb-2">Technical Specifications</h3>
             <div class="bg-gray-50 p-4 rounded-lg">
-              <p class="text-sm text-gray-900 whitespace-pre-wrap">{{ project.technicalSpecifications }}</p>
+              <p class="text-sm text-gray-900 whitespace-pre-wrap">{{ project.requirements.technical.join(', ') }}</p>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Documents Section -->
-      <div v-if="project.srsDocument || (project.additionalDocuments && project.additionalDocuments.length > 0)" class="bg-white shadow rounded-lg">
+      <div v-if="project.documents && project.documents.length > 0" class="bg-white shadow rounded-lg">
         <div class="px-6 py-4 border-b border-gray-200">
           <h2 class="text-lg font-medium text-gray-900">Project Documents</h2>
         </div>
         <div class="p-6 space-y-4">
-          <div v-if="project.srsDocument" class="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+          <div v-for="document in project.documents" :key="document._id" class="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
             <div class="flex items-center">
               <svg class="h-8 w-8 text-gray-400 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
               <div>
-                <p class="text-sm font-medium text-gray-900">SRS Document</p>
-                <p class="text-xs text-gray-500">{{ project.srsDocument.name }}</p>
+                <p class="text-sm font-medium text-gray-900">{{ document.name || 'Document' }}</p>
+                <p class="text-xs text-gray-500">{{ document.type || 'Document' }}</p>
               </div>
             </div>
             <button class="text-indigo-600 hover:text-indigo-900 text-sm font-medium">
@@ -235,10 +235,13 @@
               </div>
             </div>
             
-            <div v-if="project.milestones">
+            <div v-if="project.milestones && project.milestones.length > 0">
               <h3 class="text-sm font-medium text-gray-700 mb-3">Key Milestones</h3>
               <div class="bg-gray-50 p-4 rounded-lg">
-                <p class="text-sm text-gray-900 whitespace-pre-wrap">{{ project.milestones }}</p>
+                <div v-for="milestone in project.milestones" :key="milestone._id" class="mb-2">
+                  <p class="text-sm text-gray-900 font-medium">{{ milestone.name }}</p>
+                  <p class="text-xs text-gray-600">{{ milestone.description }}</p>
+                </div>
               </div>
             </div>
           </div>
@@ -253,27 +256,27 @@
         <div class="p-6 space-y-6">
           <div>
             <h3 class="text-sm font-medium text-gray-700 mb-2">Project Manager</h3>
-            <p class="text-sm text-gray-900">{{ project.projectManager || 'Not specified' }}</p>
+            <p class="text-sm text-gray-900">{{ project.team?.projectManager?.firstName }} {{ project.team?.projectManager?.lastName }}</p>
           </div>
           
-          <div v-if="project.stakeholders">
+          <div v-if="project.team?.stakeholders?.length">
             <h3 class="text-sm font-medium text-gray-700 mb-2">Key Stakeholders</h3>
             <div class="bg-gray-50 p-4 rounded-lg">
-              <p class="text-sm text-gray-900 whitespace-pre-wrap">{{ project.stakeholders }}</p>
+              <p class="text-sm text-gray-900 whitespace-pre-wrap">{{ project.team.stakeholders.join(', ') }}</p>
             </div>
           </div>
           
-          <div v-if="project.communicationPreferences">
-            <h3 class="text-sm font-medium text-gray-700 mb-2">Communication Preferences</h3>
+          <div v-if="project.communication?.clientUpdates?.length">
+            <h3 class="text-sm font-medium text-gray-700 mb-2">Client Updates</h3>
             <div class="bg-gray-50 p-4 rounded-lg">
-              <p class="text-sm text-gray-900 whitespace-pre-wrap">{{ project.communicationPreferences }}</p>
+              <p class="text-sm text-gray-900 whitespace-pre-wrap">{{ project.communication.clientUpdates.join(', ') }}</p>
             </div>
           </div>
           
-          <div v-if="project.specialRequirements">
-            <h3 class="text-sm font-medium text-gray-700 mb-2">Special Requirements</h3>
+          <div v-if="project.communication?.internalNotes?.length">
+            <h3 class="text-sm font-medium text-gray-700 mb-2">Internal Notes</h3>
             <div class="bg-gray-50 p-4 rounded-lg">
-              <p class="text-sm text-gray-900 whitespace-pre-wrap">{{ project.specialRequirements }}</p>
+              <p class="text-sm text-gray-900 whitespace-pre-wrap">{{ project.communication.internalNotes.join(', ') }}</p>
             </div>
           </div>
         </div>
@@ -309,16 +312,28 @@ function formatFileSize(bytes) {
 function formatProjectType(type) {
   const typeMap = {
     'web-development': 'Web Development',
+    'web_development': 'Web Development',
     'mobile-app': 'Mobile App',
+    'mobile_app': 'Mobile App',
     'desktop-app': 'Desktop App',
+    'desktop_app': 'Desktop App',
     'api-development': 'API Development',
+    'api_development': 'API Development',
     'database-design': 'Database Design',
+    'database_design': 'Database Design',
     'ui-ux-design': 'UI/UX Design',
+    'ui_ux_design': 'UI/UX Design',
     'consulting': 'Consulting',
     'maintenance': 'Maintenance',
     'other': 'Other'
   }
   return typeMap[type] || type
+}
+
+function getInitials(firstName, lastName) {
+  const first = firstName?.charAt(0) || ''
+  const last = lastName?.charAt(0) || ''
+  return (first + last).toUpperCase()
 }
 
 function updateProjectStatus() {

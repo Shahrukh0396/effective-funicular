@@ -11,8 +11,8 @@ const getSprints = async (req, res) => {
     // Add vendor filtering
     if (req.vendorFilter) {
       Object.assign(filter, req.vendorFilter)
-    } else if (req.user && req.user.vendor) {
-      filter.vendor = req.user.vendor
+    } else if (req.user && req.user.vendorId) {
+      filter.vendor = req.user.vendorId
     }
     
     // Add role-based project filtering
@@ -41,8 +41,11 @@ const getSprints = async (req, res) => {
       .populate('backlog.task', 'title status priority')
       .populate('team.user', 'firstName lastName email avatar')
       .sort({ createdAt: -1 })
-    
-    res.json(sprints)
+    console.log(sprints, "S")
+    res.json({
+      success: true,
+      data: sprints
+    })
   } catch (error) {
     res.status(500).json({ message: error.message })
   }
@@ -67,7 +70,7 @@ const createSprint = async (req, res) => {
       project: projectId,
       goal,
       createdBy: req.user.id,
-      vendor: req.user.vendor
+      vendor: req.user.vendorId
     })
     
     const savedSprint = await sprint.save()
@@ -89,8 +92,8 @@ const updateSprint = async (req, res) => {
     const filter = { _id: id }
     if (req.vendorFilter) {
       Object.assign(filter, req.vendorFilter)
-    } else if (req.user && req.user.vendor) {
-      filter.vendor = req.user.vendor
+    } else if (req.user && req.user.vendorId) {
+      filter.vendor = req.user.vendorId
     }
     
     const sprint = await Sprint.findOne(filter).populate('project', 'name')
@@ -134,8 +137,8 @@ const deleteSprint = async (req, res) => {
     const filter = { _id: id }
     if (req.vendorFilter) {
       Object.assign(filter, req.vendorFilter)
-    } else if (req.user && req.user.vendor) {
-      filter.vendor = req.user.vendor
+    } else if (req.user && req.user.vendorId) {
+      filter.vendor = req.user.vendorId
     }
     
     const sprint = await Sprint.findOne(filter).populate('project', 'name')
@@ -180,8 +183,8 @@ const startSprint = async (req, res) => {
     const filter = { _id: id }
     if (req.vendorFilter) {
       Object.assign(filter, req.vendorFilter)
-    } else if (req.user && req.user.vendor) {
-      filter.vendor = req.user.vendor
+    } else if (req.user && req.user.vendorId) {
+      filter.vendor = req.user.vendorId
     }
     
     const sprint = await Sprint.findOne(filter).populate('project', 'name')
@@ -227,8 +230,8 @@ const completeSprint = async (req, res) => {
     const filter = { _id: id }
     if (req.vendorFilter) {
       Object.assign(filter, req.vendorFilter)
-    } else if (req.user && req.user.vendor) {
-      filter.vendor = req.user.vendor
+    } else if (req.user && req.user.vendorId) {
+      filter.vendor = req.user.vendorId
     }
     
     const sprint = await Sprint.findOne(filter).populate('project', 'name')
@@ -274,8 +277,8 @@ const getSprintMetrics = async (req, res) => {
     const filter = { _id: id }
     if (req.vendorFilter) {
       Object.assign(filter, req.vendorFilter)
-    } else if (req.user && req.user.vendor) {
-      filter.vendor = req.user.vendor
+    } else if (req.user && req.user.vendorId) {
+      filter.vendor = req.user.vendorId
     }
     
     const sprint = await Sprint.findOne(filter)
@@ -314,8 +317,8 @@ const addTask = async (req, res) => {
     const filter = { _id: id }
     if (req.vendorFilter) {
       Object.assign(filter, req.vendorFilter)
-    } else if (req.user && req.user.vendor) {
-      filter.vendor = req.user.vendor
+    } else if (req.user && req.user.vendorId) {
+      filter.vendor = req.user.vendorId
     }
     
     const sprint = await Sprint.findOne(filter)
@@ -363,8 +366,8 @@ const removeTask = async (req, res) => {
     const filter = { _id: id }
     if (req.vendorFilter) {
       Object.assign(filter, req.vendorFilter)
-    } else if (req.user && req.user.vendor) {
-      filter.vendor = req.user.vendor
+    } else if (req.user && req.user.vendorId) {
+      filter.vendor = req.user.vendorId
     }
     
     const sprint = await Sprint.findOne(filter)

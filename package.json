@@ -5,14 +5,18 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:client": "lerna run dev --scope=@linton/client-portal",
-    "dev:employee": "lerna run dev --scope=@linton/employee-portal",
-    "dev:admin": "lerna run dev --scope=@linton/admin-panel",
     "dev:backend": "lerna run dev --scope=@linton/backend",
-    "dev": "concurrently \"npm run dev:client --host\" \"npm run dev:employee --host\" \"npm run dev:admin --host\"",
+    "dev:super-admin": "lerna run dev --scope=super-admin-panel",
+    "dev:marketing": "lerna run dev --scope=linton-tech-marketing",
+    "dev:tenant-admin": "lerna run dev --scope=@linton/admin-panel",
+    "dev:employee": "lerna run dev --scope=@linton/employee-portal",
+    "dev:client": "lerna run dev --scope=@linton/client-portal",
+    "dev": "concurrently --kill-others-on-fail --prefix \"[{name}]\" --names \"backend,super-admin,marketing,tenant-admin,employee,client\" \"npm run dev:backend\" \"npm run dev:super-admin\" \"npm run dev:marketing\" \"npm run dev:tenant-admin\" \"npm run dev:employee\" \"npm run dev:client\"",
+    "dev:all": "concurrently --kill-others-on-fail --prefix \"[{name}]\" --names \"backend,super-admin,marketing,tenant-admin,employee,client\" \"npm run dev:backend\" \"npm run dev:super-admin\" \"npm run dev:marketing\" \"npm run dev:tenant-admin\" \"npm run dev:employee\" \"npm run dev:client\"",
     "build": "lerna run build",
     "test": "lerna run test",
-    "lint": "lerna run lint"
+    "lint": "lerna run lint",
+    "setup": "./setup-portals.sh"
   },
   "devDependencies": {
     "lerna": "^8.0.0",

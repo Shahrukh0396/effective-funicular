@@ -10,8 +10,15 @@
 </template>
 
 <script setup>
-import { useAuthStore } from './stores/authStore'
+import { useWebSocketAuthStore } from './stores/websocketAuthStore'
 import Navigation from './components/Navigation.vue'
 
-const authStore = useAuthStore()
+const authStore = useWebSocketAuthStore()
+
+// Debug logging
+console.log('🔐 App.vue - Auth state:', {
+  isAuthenticated: authStore.isAuthenticated,
+  user: authStore.user,
+  token: !!authStore.token
+})
 </script> 

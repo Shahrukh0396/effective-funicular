@@ -91,6 +91,7 @@ const navigation = [
   { name: 'Dashboard', to: { name: 'dashboard' } },
   { name: 'Projects', to: { name: 'projects' } },
   { name: 'Sprints', to: { name: 'sprints' } },
+  { name: 'Kanban Board', to: { name: 'kanban' } },
   { name: 'Chat', to: { name: 'chat' } },
   { name: 'Billing', to: { name: 'billing' } }
 ]

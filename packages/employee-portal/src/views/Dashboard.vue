@@ -25,46 +25,46 @@
       <h2 class="text-lg font-semibold text-gray-900 mb-4">Attendance</h2>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div class="text-center p-4 bg-gray-50 rounded-lg">
-          <div class="text-2xl font-bold text-gray-900">{{ attendanceData.checkInTime || '--:--' }}</div>
+          <div class="text-2xl font-bold text-gray-900">{{ formatTime(attendanceStore.currentStatus?.checkInTime) }}</div>
           <div class="text-sm text-gray-600">Check-in Time</div>
         </div>
         <div class="text-center p-4 bg-gray-50 rounded-lg">
-          <div class="text-2xl font-bold text-gray-900">{{ attendanceData.checkOutTime || '--:--' }}</div>
+          <div class="text-2xl font-bold text-gray-900">{{ formatTime(attendanceStore.currentStatus?.checkOutTime) }}</div>
           <div class="text-sm text-gray-600">Check-out Time</div>
         </div>
         <div class="text-center p-4 bg-gray-50 rounded-lg">
-          <div class="text-2xl font-bold text-gray-900">{{ attendanceData.totalHours.toFixed(1) }}h</div>
+          <div class="text-2xl font-bold text-gray-900">{{ attendanceStore.totalHoursToday.toFixed(1) }}h</div>
           <div class="text-sm text-gray-600">Total Hours</div>
         </div>
       </div>
       
       <div class="mt-6 flex gap-3">
         <button
-          v-if="!attendanceData.checkedIn"
+          v-if="attendanceStore.canCheckIn"
           @click="checkIn"
-          :disabled="loading"
+          :disabled="loading || attendanceStore.loading"
           class="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50"
         >
-          <svg v-if="loading" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <svg v-if="loading || attendanceStore.loading" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
           Check In
         </button>
         <button
-          v-if="attendanceData.checkedIn && !attendanceData.checkedOut"
+          v-if="attendanceStore.canCheckOut"
           @click="checkOut"
-          :disabled="loading"
+          :disabled="loading || attendanceStore.loading"
           class="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50"
         >
-          <svg v-if="loading" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <svg v-if="loading || attendanceStore.loading" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
           Check Out
         </button>
         <button
-          v-if="attendanceData.checkedIn && attendanceData.checkedOut"
+          v-if="attendanceStore.isCheckedIn && attendanceStore.isCheckedOut"
           disabled
           class="flex-1 bg-gray-400 text-white px-4 py-2 rounded-lg cursor-not-allowed"
         >
@@ -226,10 +226,12 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/authStore'
+import { useAttendanceStore } from '../stores/attendanceStore'
 import axios from 'axios'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const attendanceStore = useAttendanceStore()
 
 // Reactive data
 const loading = ref(false)
@@ -252,9 +254,9 @@ const recentTasks = ref([])
 
 // Computed properties
 const attendanceStatus = computed(() => {
-  if (!attendanceData.value.checkedIn) {
+  if (!attendanceStore.isCheckedIn) {
     return { text: 'Not Checked In', color: 'text-red-600' }
-  } else if (attendanceData.value.checkedIn && !attendanceData.value.checkedOut) {
+  } else if (attendanceStore.isCheckedIn && !attendanceStore.isCheckedOut) {
     return { text: 'Checked In', color: 'text-green-600' }
   } else {
     return { text: 'Checked Out', color: 'text-gray-600' }
@@ -320,8 +322,7 @@ const getStatusClass = (status) => {
 // API calls
 const fetchAttendanceStatus = async () => {
   try {
-    const response = await axios.get('/api/employee/attendance/status')
-    attendanceData.value = response.data
+    await attendanceStore.fetchCurrentStatus()
   } catch (error) {
     console.error('Error fetching attendance status:', error)
   }
@@ -366,8 +367,7 @@ const fetchStats = async () => {
 const checkIn = async () => {
   loading.value = true
   try {
-    await axios.post('/api/employee/attendance/check-in')
-    await fetchAttendanceStatus()
+    await attendanceStore.checkIn()
   } catch (error) {
     console.error('Error checking in:', error)
   } finally {
@@ -378,8 +378,7 @@ const checkIn = async () => {
 const checkOut = async () => {
   loading.value = true
   try {
-    await axios.post('/api/employee/attendance/check-out')
-    await fetchAttendanceStatus()
+    await attendanceStore.checkOut()
   } catch (error) {
     console.error('Error checking out:', error)
   } finally {

@@ -156,6 +156,12 @@
                         View
                       </button>
                       <button
+                        @click="viewProjectKanban(project)"
+                        class="text-green-600 hover:text-green-900 mr-4"
+                      >
+                        Kanban
+                      </button>
+                      <button
                         @click="editProject(project)"
                         class="text-indigo-600 hover:text-indigo-900"
                       >
@@ -779,7 +785,15 @@ function viewProject(project) {
   router.push(`/dashboard/projects/${project.id}`)
 }
 
+function viewProjectKanban(project) {
+  router.push(`/dashboard/projects/${project.id}/kanban`)
+}
+
 function editProject(project) {
   router.push(`/dashboard/projects/${project.id}/edit`)
 }
-</script> 
+</script>
+
+<style scoped>
+/* Add any component-specific styles here */
+</style> 

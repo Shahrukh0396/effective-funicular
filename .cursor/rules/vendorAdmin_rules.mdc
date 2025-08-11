@@ -1,0 +1,653 @@
+# Linton Client Portal - Admin Portal
+# .cursorrules file for Admin Portal implementation
+
+## Project Overview
+You are building the Admin Portal for the Linton Client Portal - a vendor-specific administrative interface where vendor administrators oversee their organization's operations, manage users, analyze performance, handle client relationships, and configure system settings. This portal provides comprehensive vendor-level management capabilities.
+
+## Technology Stack
+- Frontend: Vue.js 3 with Composition API, Pinia, Tailwind CSS
+- Backend: Node.js, Express.js, MongoDB with Mongoose
+- Real-time: Socket.io for live monitoring
+- Authentication: JWT with admin role verification
+- Analytics: Chart.js, D3.js for data visualization
+- Reporting: PDF generation for reports
+- File Management: AWS S3 integration
+- Email: Automated notifications and communications
+
+## Core Features to Implement
+
+### 1. Admin Dashboard
+```vue
+<!-- AdminDashboard.vue -->
+- Comprehensive vendor performance overview
+- Real-time project status across all clients
+- Team productivity and utilization metrics
+- Revenue and billing summaries
+- Client satisfaction scores and feedback
+- System health and resource usage
+- Recent activities and alerts
+- Quick access to critical administrative functions
+```
+
+### 2. User Management System
+```vue
+<!-- UserManagement.vue -->
+- Complete user directory (employees and clients)
+- User role and permission management
+- Bulk user operations and invitations
+- User activity monitoring and audit logs
+- Account activation/deactivation controls
+- Password reset and security management
+- User onboarding workflow management
+- Performance tracking per user
+```
+
+### 3. Project Oversight & Management
+```vue
+<!-- ProjectOverview.vue -->
+- All projects dashboard with filtering and search
+- Project health monitoring and risk assessment
+- Resource allocation and team assignments
+- Budget tracking and profitability analysis
+- Timeline management and milestone oversight
+- Client communication oversight
+- Project template creation and management
+- Quality assurance and delivery tracking
+```
+
+### 4. Client Relationship Management
+```vue
+<!-- ClientManagement.vue -->
+- Complete client database and profiles
+- Client project history and preferences
+- Communication history and notes
+- Contract and billing management
+- Client satisfaction surveys and feedback
+- Renewal and upselling opportunities
+- Support ticket management
+- Client portal access and permissions
+```
+
+### 5. Analytics & Reporting
+```vue
+<!-- Analytics.vue -->
+- Comprehensive business intelligence dashboard
+- Revenue analytics and forecasting
+- Team performance and productivity metrics
+- Project success rate analysis
+- Client acquisition and retention metrics
+- Time tracking and billable hours analysis
+- Custom report generation and scheduling
+- Export capabilities for external analysis
+```
+
+### 6. Financial Management
+```vue
+<!-- FinancialManagement.vue -->
+- Revenue tracking and profit analysis
+- Invoice generation and management
+- Payment processing and collections
+- Expense tracking and budget management
+- Tax reporting and compliance
+- Financial forecasting and planning
+- Profitability analysis per project/client
+- Integration with accounting systems
+```
+
+### 7. Team Management & HR
+```vue
+<!-- TeamManagement.vue -->
+- Employee directory and org chart
+- Performance review and goal management
+- Skills inventory and capacity planning
+- Leave management and scheduling
+- Training and development tracking
+- Recognition and reward systems
+- Team communication and announcements
+- Recruitment pipeline management
+```
+
+### 8. System Configuration & Settings
+```vue
+<!-- SystemSettings.vue -->
+- Vendor profile and branding configuration
+- System preferences and customization
+- Integration settings and API management
+- Security policies and access controls
+- Notification settings and templates
+- Workflow automation configuration
+- Backup and data management
+- Compliance and audit settings
+```
+
+## Database Schemas
+
+### VendorSettings Collection
+```javascript
+{
+  _id: ObjectId,
+  vendorId: ObjectId,
+  branding: {
+    logo: String,
+    primaryColor: String,
+    secondaryColor: String,
+    fontFamily: String,
+    customCSS: String
+  },
+  business: {
+    companyName: String,
+    address: {
+      street: String,
+      city: String,
+      state: String,
+      postalCode: String,
+      country: String
+    },
+    phone: String,
+    email: String,
+    website: String,
+    taxId: String,
+    industry: String,
+    companySize: String
+  },
+  preferences: {
+    timezone: String,
+    dateFormat: String,
+    currency: String,
+    language: String,
+    workingHours: {
+      start: String, // "09:00"
+      end: String,   // "17:00"
+      workingDays: [String] // ["monday", "tuesday", ...]
+    }
+  },
+  features: {
+    timeTracking: Boolean,
+    invoicing: Boolean,
+    clientPortal: Boolean,
+    teamChat: Boolean,
+    fileSharing: Boolean,
+    advancedReporting: Boolean
+  },
+  integrations: {
+    calendar: {
+      provider: String, // 'google', 'outlook'
+      enabled: Boolean,
+      credentials: Object
+    },
+    accounting: {
+      provider: String, // 'quickbooks', 'xero'
+      enabled: Boolean,
+      credentials: Object
+    },
+    communication: {
+      provider: String, // 'slack', 'teams'
+      enabled: Boolean,
+      webhookUrl: String
+    }
+  },
+  notifications: {
+    email: {
+      enabled: Boolean,
+      templates: Object
+    },
+    sms: {
+      enabled: Boolean,
+      provider: String
+    },
+    push: {
+      enabled: Boolean
+    }
+  },
+  security: {
+    twoFactorRequired: Boolean,
+    passwordPolicy: {
+      minLength: Number,
+      requireSpecialChars: Boolean,
+      requireNumbers: Boolean,
+      requireUppercase: Boolean
+    },
+    sessionTimeout: Number, // minutes
+    ipWhitelist: [String]
+  },
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+### VendorAnalytics Collection
+```javascript
+{
+  _id: ObjectId,
+  vendorId: ObjectId,
+  period: String, // 'daily', 'weekly', 'monthly', 'quarterly'
+  date: Date,
+  metrics: {
+    revenue: {
+      total: Number,
+      recurring: Number,
+      oneTime: Number,
+      projected: Number
+    },
+    projects: {
+      total: Number,
+      active: Number,
+      completed: Number,
+      overdue: Number,
+      onTime: Number,
+      underBudget: Number
+    },
+    clients: {
+      total: Number,
+      active: Number,
+      new: Number,
+      churned: Number,
+      satisfaction: Number // average score
+    },
+    team: {
+      totalEmployees: Number,
+      activeEmployees: Number,
+      utilization: Number, // percentage
+      productivity: Number,
+      totalHours: Number,
+      billableHours: Number
+    },
+    financial: {
+      costs: Number,
+      profit: Number,
+      margin: Number,
+      hourlyRate: Number,
+      collections: Number
+    }
+  },
+  projectBreakdown: [{
+    projectId: ObjectId,
+    revenue: Number,
+    profit: Number,
+    hoursSpent: Number,
+    completion: Number,
+    clientSatisfaction: Number
+  }],
+  employeeMetrics: [{
+    employeeId: ObjectId,
+    hoursWorked: Number,
+    billableHours: Number,
+    tasksCompleted: Number,
+    productivity: Number,
+    utilization: Number
+  }],
+  clientMetrics: [{
+    clientId: ObjectId,
+    revenue: Number,
+    projects: Number,
+    satisfaction: Number,
+    lastActivity: Date
+  }],
+  createdAt: Date
+}
+```
+
+### VendorReports Collection
+```javascript
+{
+  _id: ObjectId,
+  vendorId: ObjectId,
+  name: String,
+  type: String, // 'financial', 'project', 'team', 'client', 'custom'
+  description: String,
+  parameters: {
+    dateRange: {
+      start: Date,
+      end: Date
+    },
+    filters: Object,
+    groupBy: String,
+    metrics: [String],
+    format: String // 'pdf', 'excel', 'csv'
+  },
+  schedule: {
+    enabled: Boolean,
+    frequency: String, // 'daily', 'weekly', 'monthly'
+    dayOfWeek: Number,
+    dayOfMonth: Number,
+    time: String,
+    recipients: [String] // email addresses
+  },
+  data: Object, // cached report data
+  fileUrl: String, // generated report file
+  status: String, // 'generating', 'completed', 'failed'
+  generatedAt: Date,
+  generatedBy: ObjectId,
+  downloadCount: Number,
+  lastDownloaded: Date,
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+### ClientContracts Collection (Vendor-Specific)
+```javascript
+{
+  _id: ObjectId,
+  vendorId: ObjectId,
+  clientId: ObjectId,
+  contractNumber: String,
+  title: String,
+  type: String, // 'project', 'retainer', 'hourly', 'fixed'
+  status: String, // 'draft', 'pending', 'active', 'completed', 'terminated'
+  value: {
+    amount: Number,
+    currency: String,
+    billing: String // 'hourly', 'fixed', 'milestone'
+  },
+  dates: {
+    start: Date,
+    end: Date,
+    signed: Date,
+    renewed: Date
+  },
+  terms: {
+    paymentTerms: String,
+    deliverables: [String],
+    milestones: [{
+      name: String,
+      amount: Number,
+      dueDate: Date,
+      completed: Boolean
+    }],
+    hourlyRates: [{
+      role: String,
+      rate: Number
+    }]
+  },
+  documents: [{
+    name: String,
+    url: String,
+    type: String, // 'contract', 'amendment', 'invoice'
+    uploadedAt: Date,
+    signedBy: [ObjectId]
+  }],
+  renewalOptions: {
+    autoRenew: Boolean,
+    renewalPeriod: Number, // months
+    renewalRate: Number,
+    notificationDays: Number
+  },
+  performance: {
+    budgetUtilization: Number,
+    timelineAdherence: Number,
+    clientSatisfaction: Number,
+    profitMargin: Number
+  },
+  createdBy: ObjectId,
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+## API Endpoints
+
+### User Management
+```javascript
+// GET /api/admin/users - Get all vendor users with filtering
+// POST /api/admin/users - Create new user
+// GET /api/admin/users/:id - Get specific user details
+// PUT /api/admin/users/:id - Update user information
+// DELETE /api/admin/users/:id - Deactivate user
+// POST /api/admin/users/bulk-invite - Bulk user invitations
+// GET /api/admin/users/:id/activity - Get user activity logs
+// POST /api/admin/users/:id/reset-password - Reset user password
+```
+
+### Project Management
+```javascript
+// GET /api/admin/projects - Get all vendor projects
+// GET /api/admin/projects/analytics - Get project analytics
+// PUT /api/admin/projects/:id - Update project details
+// POST /api/admin/projects/:id/assign-team - Assign team members
+// GET /api/admin/projects/templates - Get project templates
+// POST /api/admin/projects/templates - Create project template
+// GET /api/admin/projects/health - Get project health metrics
+```
+
+### Client Management
+```javascript
+// GET /api/admin/clients - Get all clients with details
+// POST /api/admin/clients - Add new client
+// GET /api/admin/clients/:id - Get specific client details
+// PUT /api/admin/clients/:id - Update client information
+// GET /api/admin/clients/:id/projects - Get client projects
+// GET /api/admin/clients/:id/contracts - Get client contracts
+// POST /api/admin/clients/:id/notes - Add client notes
+// GET /api/admin/clients/analytics - Get client analytics
+```
+
+### Analytics & Reporting
+```javascript
+// GET /api/admin/analytics/dashboard - Get dashboard metrics
+// GET /api/admin/analytics/revenue - Get revenue analytics
+// GET /api/admin/analytics/team - Get team performance metrics
+// GET /api/admin/analytics/projects - Get project analytics
+// GET /api/admin/analytics/clients - Get client metrics
+// POST /api/admin/reports - Generate custom report
+// GET /api/admin/reports - Get saved reports
+// GET /api/admin/reports/:id/download - Download report
+```
+
+### Financial Management
+```javascript
+// GET /api/admin/finances/overview - Get financial overview
+// GET /api/admin/invoices - Get all invoices
+// POST /api/admin/invoices - Create new invoice
+// PUT /api/admin/invoices/:id - Update invoice
+// POST /api/admin/invoices/:id/send - Send invoice to client
+// GET /api/admin/expenses - Get expense tracking
+// POST /api/admin/expenses - Add new expense
+// GET /api/admin/finances/forecasting - Get financial forecasts
+```
+
+### System Configuration
+```javascript
+// GET /api/admin/settings - Get vendor settings
+// PUT /api/admin/settings - Update vendor settings
+// GET /api/admin/integrations - Get integration status
+// PUT /api/admin/integrations/:type - Configure integration
+// GET /api/admin/templates - Get system templates
+// PUT /api/admin/templates/:type - Update templates
+// POST /api/admin/backup - Trigger data backup
+// GET /api/admin/audit-logs - Get system audit logs
+```
+
+## Frontend Components Structure
+
+```
+src/
+├── pages/
+│   ├── AdminDashboard.vue
+│   ├── UserManagement.vue
+│   ├── ProjectOverview.vue
+│   ├── ClientManagement.vue
+│   ├── Analytics.vue
+│   ├── FinancialManagement.vue
+│   ├── TeamManagement.vue
+│   ├── SystemSettings.vue
+│   ├── ReportsCenter.vue
+│   └── AuditLogs.vue
+├── components/
+│   ├── dashboard/
+│   │   ├── MetricsGrid.vue
+│   │   ├── RevenueChart.vue
+│   │   ├── ProjectStatusChart.vue
+│   │   ├── TeamUtilizationChart.vue
+│   │   ├── ClientSatisfactionWidget.vue
+│   │   ├── AlertsPanel.vue
+│   │   └── QuickActionsPanel.vue
+│   ├── users/
+│   │   ├── UserTable.vue
+│   │   ├── UserForm.vue
+│   │   ├── UserDetails.vue
+│   │   ├── RoleManager.vue
+│   │   ├── BulkInviteModal.vue
+│   │   ├── ActivityTimeline.vue
+│   │   └── PermissionMatrix.vue
+│   ├── projects/
+│   │   ├── ProjectGrid.vue
+│   │   ├── ProjectCard.vue
+│   │   ├── ProjectHealthIndicator.vue
+│   │   ├── ResourceAllocation.vue
+│   │   ├── ProjectTimeline.vue
+│   │   ├── BudgetTracker.vue
+│   │   └── ProjectTemplateManager.vue
+│   ├── clients/
+│   │   ├── ClientTable.vue
+│   │   ├── ClientProfile.vue
+│   │   ├── ClientProjects.vue
+│   │   ├── ContractManager.vue
+│   │   ├── ClientNotes.vue
+│   │   ├── SatisfactionTracker.vue
+│   │   └── RenewalTracker.vue
+│   ├── analytics/
+│   │   ├── AnalyticsDashboard.vue
+│   │   ├── RevenueAnalytics.vue
+│   │   ├── TeamAnalytics.vue
+│   │   ├── ProjectAnalytics.vue
+│   │   ├── ClientAnalytics.vue
+│   │   ├── CustomChartBuilder.vue
+│   │   └── MetricsComparison.vue
+│   ├── finances/
+│   │   ├── FinancialOverview.vue
+│   │   ├── InvoiceManager.vue
+│   │   ├── ExpenseTracker.vue
+│   │   ├── ProfitabilityAnalysis.vue
+│   │   ├── BudgetPlanner.vue
+│   │   ├── PaymentTracker.vue
+│   │   └── TaxReporting.vue
+│   ├── reports/
+│   │   ├── ReportBuilder.vue
+│   │   ├── ReportPreview.vue
+│   │   ├── ScheduledReports.vue
+│   │   ├── ReportTemplates.vue
+│   │   ├── ExportOptions.vue
+│   │   └── ReportHistory.vue
+│   ├── settings/
+│   │   ├── CompanyProfile.vue
+│   │   ├── BrandingSettings.vue
+│   │   ├── IntegrationSettings.vue
+│   │   ├── SecuritySettings.vue
+│   │   ├── NotificationSettings.vue
+│   │   ├── WorkflowSettings.vue
+│   │   └── BackupSettings.vue
+│   └── common/
+│       ├── DataTable.vue
+│       ├── AdvancedFilters.vue
+│       ├── ExportDialog.vue
+│       ├── ConfirmationModal.vue
+│       ├── DateRangePicker.vue
+│       ├── BulkActionsBar.vue
+│       ├── SearchInput.vue
+│       └── StatusBadge.vue
+```
+
+## Key Implementation Guidelines
+
+### 1. Real-time Monitoring
+```javascript
+// Implement real-time updates for:
+- Project status changes across all projects
+- Team member activity and availability
+- Client interactions and communications
+- Financial transactions and payments
+- System alerts and notifications
+- User login/logout events
+- Performance metric changes
+```
+
+### 2. Advanced Analytics
+```javascript
+// Comprehensive analytics features:
+- Interactive dashboards with drill-down capabilities
+- Comparative analysis (period-over-period)
+- Predictive analytics for revenue and churn
+- Custom metric creation and tracking
+- Automated insight generation
+- Benchmarking against industry standards
+- ROI calculation for different initiatives
+```
+
+### 3. Workflow Automation
+```javascript
+// Automated processes:
+- User onboarding and role assignment
+- Project milestone notifications
+- Invoice generation and sending
+- Contract renewal reminders
+- Performance review scheduling
+- Backup and maintenance tasks
+- Report generation and distribution
+```
+
+### 4. Integration Management
+```javascript
+// Third-party integrations:
+- Calendar systems (Google, Outlook)
+- Accounting software (QuickBooks, Xero)
+- Communication tools (Slack, Teams)
+- CRM systems (Salesforce, HubSpot)
+- File storage (Google Drive, Dropbox)
+- Payment processors (Stripe, PayPal)
+- Email marketing (Mailchimp, SendGrid)
+```
+
+### 5. Security & Compliance
+```javascript
+// Security measures:
+- Role-based access control with granular permissions
+- Audit logging for all administrative actions
+- Data encryption at rest and in transit
+- Regular security assessments and updates
+- GDPR compliance for client data
+- SOC 2 compliance features
+- Incident response procedures
+```
+
+### 6. Performance Optimization
+```javascript
+// Optimization strategies:
+- Efficient data aggregation for analytics
+- Caching frequently accessed data
+- Lazy loading for large datasets
+- Background processing for heavy operations
+- Database query optimization
+- CDN for static assets
+- Progressive loading for dashboards
+```
+
+## Security Considerations
+- Multi-level administrative permissions
+- Sensitive data encryption and protection
+- Audit trails for all system changes
+- IP-based access restrictions
+- Session management and timeout policies
+- Two-factor authentication enforcement
+- Regular security monitoring and alerts
+- Data backup and disaster recovery
+
+## Performance Requirements
+- Dashboard loading time < 3 seconds
+- Real-time data updates within 2 seconds
+- Report generation < 30 seconds for standard reports
+- User interface responsiveness < 200ms
+- Database query optimization for large datasets
+- Efficient memory usage for analytics
+- Scalable architecture for vendor growth
+
+## User Experience Guidelines
+- Intuitive navigation with consistent patterns
+- Contextual help and documentation
+- Keyboard shortcuts for power users
+- Customizable dashboard layouts
+- Progressive disclosure of complex features
+- Clear visual hierarchy and information architecture
+- Mobile-responsive design for on-the-go access
+
+Remember: This portal is the command center for vendor operations. Focus on providing actionable insights, efficient management tools, and clear visibility into all aspects of the business. Every feature should support data-driven decision making and operational excellence.

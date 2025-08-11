@@ -54,7 +54,7 @@ export const projectService = {
       }
 
       if (data.success) {
-        projects.value = data.data
+        projects.value = data.data.projects || data.data
       }
 
       return data
@@ -65,6 +65,25 @@ export const projectService = {
   },
 
   async getProjectById(projectId) {
+    try {
+      const response = await fetch(`${config.apiUrl}/api/projects/${projectId}`, {
+        headers: authService.getAuthHeaders()
+      })
+      
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to fetch project')
+      }
+
+      return data
+    } catch (error) {
+      console.error('Error fetching project:', error)
+      throw error
+    }
+  },
+
+  async fetchProject(projectId) {
     try {
       const response = await fetch(`${config.apiUrl}/api/projects/${projectId}`, {
         headers: authService.getAuthHeaders()

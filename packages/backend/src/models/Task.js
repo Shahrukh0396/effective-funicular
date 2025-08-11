@@ -220,7 +220,7 @@ const taskSchema = new mongoose.Schema({
   },
   
   // Multi-tenant support
-  vendor: {
+  vendorId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Vendor',
     required: true
@@ -238,7 +238,7 @@ taskSchema.index({ dueDate: 1 })
 taskSchema.index({ priority: 1 })
 taskSchema.index({ labels: 1 })
 taskSchema.index({ tags: 1 })
-taskSchema.index({ vendor: 1 })
+taskSchema.index({ vendorId: 1 })
 
 // Virtual for isOverdue
 taskSchema.virtual('isOverdue').get(function() {

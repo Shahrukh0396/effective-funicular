@@ -10,14 +10,20 @@ const detectVendor = async (req, res, next) => {
       return next()
     }
 
-    // Check for custom domain first
-    const vendorByDomain = await Vendor.findOne({
-      'branding.customDomain': hostname
+    // Check for white-label custom domains first
+    const vendorByCustomDomain = await Vendor.findOne({
+      $or: [
+        { 'branding.customDomain': hostname },
+        { 'branding.whiteLabel.domains.clientPortal': hostname },
+        { 'branding.whiteLabel.domains.employeePortal': hostname },
+        { 'branding.whiteLabel.domains.adminPortal': hostname }
+      ]
     })
 
-    if (vendorByDomain) {
-      req.vendorContext = vendorByDomain
-      req.vendorSlug = vendorByDomain.slug
+    if (vendorByCustomDomain) {
+      req.vendorContext = vendorByCustomDomain
+      req.vendorSlug = vendorByCustomDomain.domain
+      req.portalType = detectPortalType(hostname, vendorByCustomDomain)
       return next()
     }
 
@@ -28,16 +34,35 @@ const detectVendor = async (req, res, next) => {
       const domain = subdomainMatch[2]
       
       // Skip if it's a common subdomain
-      const commonSubdomains = ['www', 'api', 'admin', 'client', 'employee', 'staging', 'dev']
+      const commonSubdomains = ['www', 'api', 'staging', 'dev']
       if (commonSubdomains.includes(subdomain)) {
         return next()
       }
 
-      // Find vendor by slug
-      const vendorBySlug = await Vendor.findOne({ slug: subdomain })
-      if (vendorBySlug) {
-        req.vendorContext = vendorBySlug
-        req.vendorSlug = vendorBySlug.slug
+      // Find vendor by domain
+      const vendorByDomain = await Vendor.findOne({ domain: subdomain })
+      if (vendorByDomain) {
+        req.vendorContext = vendorByDomain
+        req.vendorSlug = vendorByDomain.domain
+        req.portalType = detectPortalType(hostname, vendorByDomain)
+        return next()
+      }
+    }
+
+    // Check for portal-specific subdomains (app, employee, admin)
+    const portalSubdomainMatch = hostname.match(/^(app|employee|admin)\.(.+)$/)
+    if (portalSubdomainMatch) {
+      const portalType = portalSubdomainMatch[1]
+      const domain = portalSubdomainMatch[2]
+      
+      // Find vendor by domain
+      const vendorByDomain = await Vendor.findOne({ 
+        domain: domain.replace(/\./g, '') 
+      })
+      if (vendorByDomain) {
+        req.vendorContext = vendorByDomain
+        req.vendorSlug = vendorByDomain.domain
+        req.portalType = portalType
         return next()
       }
     }
@@ -48,6 +73,24 @@ const detectVendor = async (req, res, next) => {
     console.error('Multi-tenant detection error:', error)
     next()
   }
+}
+
+// Helper function to detect portal type
+const detectPortalType = (hostname, vendor) => {
+  // Check white-label domains first
+  if (vendor.branding.whiteLabel && vendor.branding.whiteLabel.enabled) {
+    if (hostname === vendor.branding.whiteLabel.domains.clientPortal) return 'client'
+    if (hostname === vendor.branding.whiteLabel.domains.employeePortal) return 'employee'
+    if (hostname === vendor.branding.whiteLabel.domains.adminPortal) return 'admin'
+  }
+
+  // Check subdomain patterns
+  if (hostname.startsWith('app.')) return 'client'
+  if (hostname.startsWith('employee.')) return 'employee'
+  if (hostname.startsWith('admin.')) return 'admin'
+
+  // Default to client portal
+  return 'client'
 }
 
 // Middleware to require vendor context
@@ -75,6 +118,16 @@ const requireVendorContext = (req, res, next) => {
     })
   }
 
+  // Check white-label status for white-label clients
+  if (req.vendorContext.whiteLabelSettings && req.vendorContext.whiteLabelSettings.isWhiteLabelClient) {
+    if (req.vendorContext.whiteLabelSettings.whiteLabelStatus !== 'active') {
+      return res.status(403).json({
+        success: false,
+        message: 'White-label account is not active'
+      })
+    }
+  }
+
   next()
 }
 
@@ -90,21 +143,52 @@ const filterByVendor = (req, res, next) => {
 const injectVendorBranding = (req, res, next) => {
   if (req.vendorContext) {
     res.locals.vendorBranding = {
-      companyName: req.vendorContext.branding.companyName || req.vendorContext.companyName,
+      companyName: req.vendorContext.branding.companyName || req.vendorContext.name,
       primaryColor: req.vendorContext.branding.primaryColor,
       secondaryColor: req.vendorContext.branding.secondaryColor,
       logo: req.vendorContext.branding.logo,
       logoDark: req.vendorContext.branding.logoDark,
       favicon: req.vendorContext.branding.favicon,
-      tagline: req.vendorContext.branding.tagline
+      tagline: req.vendorContext.branding.tagline,
+      whiteLabel: req.vendorContext.branding.whiteLabel,
+      clientType: req.vendorContext.clientType
     }
   }
   next()
+}
+
+// Middleware to check portal access
+const checkPortalAccess = (allowedPortalTypes) => {
+  return (req, res, next) => {
+    if (!req.vendorContext) {
+      return res.status(404).json({
+        success: false,
+        message: 'Vendor not found'
+      })
+    }
+
+    if (!req.portalType) {
+      return res.status(400).json({
+        success: false,
+        message: 'Portal type not detected'
+      })
+    }
+
+    if (!allowedPortalTypes.includes(req.portalType)) {
+      return res.status(403).json({
+        success: false,
+        message: `Access denied. This portal is for ${allowedPortalTypes.join(', ')} only.`
+      })
+    }
+
+    next()
+  }
 }
 
 module.exports = {
   detectVendor,
   requireVendorContext,
   filterByVendor,
-  injectVendorBranding
+  injectVendorBranding,
+  checkPortalAccess
 } 

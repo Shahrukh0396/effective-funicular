@@ -19,8 +19,12 @@ const createRateLimiter = (windowMs = 15 * 60 * 1000, max = 100) => {
 }
 
 // Specific rate limiters
-const authLimiter = createRateLimiter(15 * 60 * 1000, 5) // 5 attempts per 15 minutes
-const generalLimiter = createRateLimiter(15 * 60 * 1000, 100) // 100 requests per 15 minutes
+const authLimiter = process.env.NODE_ENV === 'development' ? 
+  createRateLimiter(15 * 60 * 1000, 100) : // 100 attempts per 15 minutes for development
+  createRateLimiter(15 * 60 * 1000, 5) // 5 attempts per 15 minutes for production
+const generalLimiter = process.env.NODE_ENV === 'test' ? (req, res, next) => next() : 
+                      process.env.NODE_ENV === 'development' ? createRateLimiter(15 * 60 * 1000, 500) : 
+                      createRateLimiter(15 * 60 * 1000, 100) // More lenient for development
 const uploadLimiter = createRateLimiter(60 * 60 * 1000, 10) // 10 uploads per hour
 
 // Input validation middleware
@@ -141,10 +145,17 @@ const securityHeaders = helmet({
 // CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
+    // In test environment, allow all origins
+    if (process.env.NODE_ENV === 'test') {
+      return callback(null, true)
+    }
+    
     const allowedOrigins = [
       'http://localhost:5173', // Client portal
       'http://localhost:5174', // Employee portal
       'http://localhost:5175', // Admin panel
+      'http://localhost:5176', // Super admin panel
+      'http://localhost:5177', // Marketing website
       // Allow ALB domain
       'http://linton-staging-alb-2029187797.us-east-2.elb.amazonaws.com',
       'https://linton-staging-alb-2029187797.us-east-2.elb.amazonaws.com',

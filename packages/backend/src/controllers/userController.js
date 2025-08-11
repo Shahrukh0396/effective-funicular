@@ -181,8 +181,8 @@ const getDashboardData = async (req, res) => {
     }
 
     const projects = await Project.find(projectFilter)
-      .populate('client', 'firstName lastName email company')
-      .populate('projectManager', 'firstName lastName email')
+      .populate('clientId', 'firstName lastName email company')
+      .populate('team.projectManager', 'firstName lastName email')
       .sort({ updatedAt: -1 })
       .limit(5)
 
@@ -271,9 +271,9 @@ const getUserProjects = async (req, res) => {
     }
 
     const projects = await Project.find(filter)
-      .populate('client', 'firstName lastName email company')
-      .populate('projectManager', 'firstName lastName email')
-      .populate('team.user', 'firstName lastName email')
+      .populate('clientId', 'firstName lastName email company')
+      .populate('team.projectManager', 'firstName lastName email')
+      .populate('team.members.user', 'firstName lastName email')
       .sort({ updatedAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))

@@ -1,0 +1,324 @@
+# Cursor AI Rules - Linton Client Portal
+
+## Project Overview
+You are working on the **Linton Client Portal**, a comprehensive multi-tenant SaaS platform with 5 interconnected portals:
+
+1. **Client Portal** (Vendor-specific) - Client project management and communication
+2. **Employee Portal** (Vendor-specific) - Task management and time tracking
+3. **Admin Portal** (Vendor-specific) - Vendor organization management
+4. **Marketing Website** (Platform-wide) - Lead generation and service sales
+5. **Super Admin Portal** (Platform-wide) - Platform oversight and analytics
+
+## Technology Stack Rules
+
+### Frontend
+- **Framework**: Vue.js 3 with Composition API
+- **State Management**: Pinia (NOT Vuex)
+- **Styling**: Tailwind CSS utility classes
+- **Build Tool**: Vite
+- **Type Safety**: TypeScript preferred
+- **Component Structure**: Use `<script setup>` syntax
+- **Reactivity**: Use `ref()` and `reactive()` appropriately
+
+### Backend
+- **Runtime**: Node.js with Express.js
+- **Database**: MongoDB with Mongoose ODM
+- **Authentication**: JWT tokens with refresh token rotation
+- **Real-time**: Socket.io for live updates
+- **File Uploads**: Multer with AWS S3 integration
+- **Payments**: Stripe for subscription management
+- **Security**: Helmet, rate limiting, XSS protection
+
+### Code Style Guidelines
+
+#### Vue.js 3 Rules
+```javascript
+// ✅ DO: Use Composition API with <script setup>
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+
+const authStore = useAuthStore()
+const router = useRouter()
+const isLoading = ref(false)
+</script>
+
+// ❌ DON'T: Use Options API unless specifically needed
+<script>
+export default {
+  data() {
+    return {
+      isLoading: false
+    }
+  }
+}
+</script>
+```
+
+#### State Management Rules
+```javascript
+// ✅ DO: Use Pinia stores with composition syntax
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+
+export const useProjectStore = defineStore('project', () => {
+  const projects = ref([])
+  const currentProject = ref(null)
+  
+  const activeProjects = computed(() => 
+    projects.value.filter(p => p.status === 'active')
+  )
+  
+  return { projects, currentProject, activeProjects }
+})
+
+// ❌ DON'T: Create Vuex-style stores
+```
+
+#### Component Naming
+- Use PascalCase for components: `ProjectCard.vue`, `TaskList.vue`
+- Use kebab-case for component usage: `<project-card>`, `<task-list>`
+- Prefix shared components with `Base`: `BaseButton.vue`, `BaseModal.vue`
+
+## Architecture Rules
+
+### Multi-Tenant Structure
+- **Vendor Isolation**: Each vendor's data must be completely isolated
+- **Portal Separation**: Clear boundaries between the 5 portals
+- **Role-Based Access**: Implement strict RBAC across all portals
+- **Data Security**: Never mix vendor data in queries or responses
+
+### API Design Rules
+```javascript
+// ✅ DO: Follow RESTful conventions with tenant context
+GET    /api/v1/vendors/:vendorId/projects
+POST   /api/v1/vendors/:vendorId/projects
+PUT    /api/v1/vendors/:vendorId/projects/:id
+DELETE /api/v1/vendors/:vendorId/projects/:id
+
+// ✅ DO: Use platform-wide routes for super admin
+GET /api/v1/platform/analytics
+GET /api/v1/platform/vendors
+GET /api/v1/platform/users
+
+// ❌ DON'T: Mix vendor and platform endpoints
+GET /api/v1/projects // Ambiguous - which vendor?
+```
+
+### Database Schema Rules
+```javascript
+// ✅ DO: Always include vendorId in vendor-specific collections
+const projectSchema = new mongoose.Schema({
+  vendorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor', required: true },
+  name: { type: String, required: true },
+  status: { type: String, enum: ['planning', 'active', 'completed'] },
+  // ... other fields
+})
+
+// ✅ DO: Add compound indexes for multi-tenant queries
+projectSchema.index({ vendorId: 1, status: 1 })
+projectSchema.index({ vendorId: 1, createdAt: -1 })
+
+// ❌ DON'T: Create schemas without vendor context for vendor-specific data
+```
+
+## Feature Implementation Rules
+
+### Authentication & Authorization
+- **JWT Structure**: Include `vendorId`, `role`, `permissions` in token payload
+- **Route Protection**: Always validate vendor access in middleware
+- **Role Hierarchy**: Super Admin > Marketing Admin > Vendor Admin > Employee > Client
+- **Session Management**: Implement refresh token rotation
+
+### Real-time Updates
+```javascript
+// ✅ DO: Namespace socket events by vendor and feature
+socket.join(`vendor:${vendorId}:projects`)
+socket.emit('project:updated', { vendorId, projectId, data })
+
+// ✅ DO: Use different namespaces for different portals
+const clientNamespace = io.of('/client-portal')
+const employeeNamespace = io.of('/employee-portal')
+```
+
+### Error Handling
+```javascript
+// ✅ DO: Use consistent error response format
+{
+  success: false,
+  error: {
+    code: 'VALIDATION_ERROR',
+    message: 'Invalid project data',
+    details: { field: 'name', reason: 'required' }
+  }
+}
+
+// ✅ DO: Log errors with context
+logger.error('Project creation failed', {
+  vendorId,
+  userId,
+  error: error.message,
+  stack: error.stack
+})
+```
+
+## Portal-Specific Rules
+
+### Client Portal
+- **Focus**: Project visibility, progress tracking, communication
+- **Permissions**: Read-only for most data, comment/feedback capabilities
+- **UI**: Clean, client-friendly interface with minimal technical details
+
+### Employee Portal
+- **Focus**: Task management, time tracking, collaboration
+- **Permissions**: Full CRUD on assigned tasks, time entries
+- **UI**: Productivity-focused with keyboard shortcuts and bulk actions
+
+### Admin Portal (Vendor)
+- **Focus**: Team management, project oversight, vendor analytics
+- **Permissions**: Full vendor-scope access, user management
+- **UI**: Dashboard-heavy with comprehensive reporting
+
+### Marketing Website
+- **Focus**: Lead generation, service showcase, vendor onboarding
+- **Features**: SEO optimization, landing pages, trial signup
+- **UI**: Conversion-optimized with clear CTAs
+
+### Super Admin Portal
+- **Focus**: Platform analytics, vendor management, system health
+- **Permissions**: Cross-vendor visibility, platform configuration
+- **UI**: Executive dashboard with high-level metrics
+
+## Security Rules
+
+### Data Protection
+- **GDPR Compliance**: Implement consent management and data deletion
+- **Encryption**: All sensitive data encrypted at rest and in transit
+- **Input Validation**: Never trust client input, validate everything
+- **SQL Injection**: Use parameterized queries, never string concatenation
+
+### Rate Limiting
+```javascript
+// ✅ DO: Implement tiered rate limiting
+const rateLimits = {
+  '/api/auth/login': { max: 5, window: '15m' },
+  '/api/v1/*': { max: 100, window: '1h' },
+  '/api/v1/super-admin/*': { max: 1000, window: '1h' }
+}
+```
+
+## Performance Rules
+
+### Database Optimization
+- **Indexing**: Create indexes for all query patterns
+- **Aggregation**: Use MongoDB aggregation pipeline for complex queries
+- **Pagination**: Always paginate large result sets
+- **Caching**: Implement Redis caching for frequently accessed data
+
+### Frontend Optimization
+- **Code Splitting**: Lazy load portal-specific components
+- **Tree Shaking**: Only import used Tailwind classes
+- **Image Optimization**: Use WebP format with fallbacks
+- **Bundle Analysis**: Monitor and optimize bundle sizes
+
+## Testing Rules
+
+### Unit Testing
+- **Coverage**: Maintain >80% test coverage
+- **Components**: Test Vue components with Vue Test Utils
+- **API**: Test all endpoints with proper mocking
+- **Stores**: Test Pinia stores in isolation
+
+### Integration Testing
+- **Multi-tenant**: Test vendor isolation thoroughly
+- **Authentication**: Test all permission scenarios
+- **Real-time**: Test Socket.io event handling
+
+## Deployment Rules
+
+### Environment Configuration
+```javascript
+// ✅ DO: Use environment-specific configs
+const config = {
+  development: {
+    mongodb: 'mongodb://localhost:27017/linton-dev',
+    redis: 'redis://localhost:6379',
+    s3Bucket: 'linton-dev-uploads'
+  },
+  production: {
+    mongodb: process.env.MONGODB_URI,
+    redis: process.env.REDIS_URL,
+    s3Bucket: process.env.S3_BUCKET
+  }
+}
+```
+
+### Docker Rules
+- **Multi-stage builds**: Optimize image sizes
+- **Health checks**: Implement proper health endpoints
+- **Secrets**: Never include secrets in images
+
+## Monitoring Rules
+
+### Logging
+- **Structured Logging**: Use JSON format with consistent fields
+- **Log Levels**: DEBUG, INFO, WARN, ERROR, FATAL
+- **Context**: Always include vendorId, userId, requestId
+
+### Metrics
+- **Business Metrics**: Track projects, tasks, time entries per vendor
+- **Technical Metrics**: Response times, error rates, resource usage
+- **User Metrics**: Login frequency, feature usage, session duration
+
+## Documentation Rules
+
+### Code Documentation
+- **JSDoc**: Document all functions with parameters and return types
+- **README**: Keep project setup instructions current
+- **API Docs**: Use OpenAPI/Swagger for API documentation
+- **Architecture**: Maintain architecture decision records (ADRs)
+
+### Comments
+```javascript
+// ✅ DO: Explain WHY, not WHAT
+// Debounce search to prevent excessive API calls during typing
+const debouncedSearch = debounce(searchProjects, 300)
+
+// ❌ DON'T: State the obvious
+// Set loading to true
+setLoading(true)
+```
+
+## Common Patterns
+
+### API Client Pattern
+```javascript
+// ✅ DO: Create reusable API clients
+class ProjectsAPI {
+  constructor(vendorId) {
+    this.vendorId = vendorId
+    this.baseURL = `/api/v1/vendors/${vendorId}/projects`
+  }
+  
+  async getAll(filters = {}) {
+    return apiClient.get(this.baseURL, { params: filters })
+  }
+  
+  async create(data) {
+    return apiClient.post(this.baseURL, data)
+  }
+}
+```
+
+### Error Boundary Pattern
+```vue
+<!-- ✅ DO: Wrap portal sections in error boundaries -->
+<template>
+  <ErrorBoundary>
+    <ProjectDashboard />
+  </ErrorBoundary>
+</template>
+```
+
+Remember: This is a multi-tenant SaaS platform where data isolation and security are paramount. Always consider the vendor context and user permissions in every feature implementation.

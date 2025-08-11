@@ -84,7 +84,7 @@
         <div v-else class="mt-8">
           <div class="bg-white shadow overflow-hidden sm:rounded-md">
             <ul role="list" class="divide-y divide-gray-200">
-              <li v-for="task in filteredTasks" :key="task.id" class="px-4 py-4 sm:px-6">
+              <li v-for="task in filteredTasks" :key="task._id" class="px-4 py-4 sm:px-6">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center">
                     <div class="flex-shrink-0">
@@ -164,31 +164,50 @@
                   </h3>
                   <div class="mt-2">
                     <p class="text-sm text-gray-500">
-                      Select an employee to assign this task to
+                      Select a task and an employee to assign
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div class="mt-5">
-                <label for="employee" class="block text-sm font-medium text-gray-700">Employee</label>
-                <select
-                  id="employee"
-                  v-model="selectedEmployeeId"
-                  class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-                >
-                  <option value="">Select an employee</option>
-                  <option v-for="employee in employees" :key="employee.id" :value="employee.id">
-                    {{ employee.firstName }} {{ employee.lastName }} ({{ employee.position || employee.role }})
-                  </option>
-                </select>
+              <div class="mt-5 space-y-4">
+                <div>
+                  <label for="task" class="block text-sm font-medium text-gray-700">Task</label>
+                  <select
+                    id="task"
+                    v-model="selectedTaskId"
+                    class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                  >
+                    <option value="">Select a task</option>
+                    <option v-for="task in unassignedTasks" :key="task._id" :value="task._id">
+                      {{ task.title }} ({{ task.status }})
+                    </option>
+                    <option v-if="unassignedTasks.length === 0" disabled>
+                      No unassigned tasks available
+                    </option>
+                  </select>
+                </div>
+
+                <div>
+                  <label for="employee" class="block text-sm font-medium text-gray-700">Employee</label>
+                  <select
+                    id="employee"
+                    v-model="selectedEmployeeId"
+                    class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                  >
+                    <option value="">Select an employee</option>
+                    <option v-for="employee in employees" :key="employee._id" :value="employee._id">
+                      {{ employee.firstName }} {{ employee.lastName }} ({{ employee.role }})
+                    </option>
+                  </select>
+                </div>
               </div>
 
               <div class="mt-5 sm:mt-6 sm:grid sm:grid-cols-2 sm:gap-3 sm:grid-flow-row-dense">
                 <button
                   type="button"
                   @click="confirmAssignment"
-                  :disabled="!selectedEmployeeId || assignmentLoading"
+                  :disabled="!selectedTaskId || !selectedEmployeeId || assignmentLoading"
                   class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:col-start-2 sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span v-if="assignmentLoading" class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></span>
@@ -202,6 +221,142 @@
                   Cancel
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Create Task Modal -->
+        <div v-if="showCreateTaskModal" class="fixed inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+          <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
+              <div>
+                <div class="mt-3 text-center sm:mt-5">
+                  <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+                    Create New Task
+                  </h3>
+                  <div class="mt-2">
+                    <p class="text-sm text-gray-500">
+                      Fill in the details to create a new task
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <form @submit.prevent="createTask" class="mt-5 space-y-4">
+                <div>
+                  <label for="title" class="block text-sm font-medium text-gray-700">Task Title</label>
+                  <input
+                    id="title"
+                    v-model="newTask.title"
+                    type="text"
+                    required
+                    class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    placeholder="Enter task title"
+                  />
+                </div>
+
+                <div>
+                  <label for="description" class="block text-sm font-medium text-gray-700">Description</label>
+                  <textarea
+                    id="description"
+                    v-model="newTask.description"
+                    rows="3"
+                    required
+                    class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    placeholder="Enter task description"
+                  ></textarea>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                  <div>
+                    <label for="priority" class="block text-sm font-medium text-gray-700">Priority</label>
+                    <select
+                      id="priority"
+                      v-model="newTask.priority"
+                      class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="urgent">Urgent</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="status" class="block text-sm font-medium text-gray-700">Status</label>
+                    <select
+                      id="status"
+                      v-model="newTask.status"
+                      class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      <option value="todo">Todo</option>
+                      <option value="in-progress">In Progress</option>
+                      <option value="review">Review</option>
+                      <option value="testing">Testing</option>
+                      <option value="done">Done</option>
+                      <option value="blocked">Blocked</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                  <div>
+                    <label for="assignedTo" class="block text-sm font-medium text-gray-700">Assign To</label>
+                    <select
+                      id="assignedTo"
+                      v-model="newTask.assignedTo"
+                      class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      <option value="">Select an employee</option>
+                      <option v-for="employee in employees" :key="employee._id" :value="employee._id">
+                        {{ employee.firstName }} {{ employee.lastName }}
+                      </option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label for="estimatedHours" class="block text-sm font-medium text-gray-700">Estimated Hours</label>
+                    <input
+                      id="estimatedHours"
+                      v-model.number="newTask.estimatedHours"
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label for="dueDate" class="block text-sm font-medium text-gray-700">Due Date</label>
+                  <input
+                    id="dueDate"
+                    v-model="newTask.dueDate"
+                    type="date"
+                    class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+
+                <div class="mt-5 sm:mt-6 sm:grid sm:grid-cols-2 sm:gap-3 sm:grid-flow-row-dense">
+                  <button
+                    type="submit"
+                    :disabled="createTaskLoading"
+                    class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:col-start-2 sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <span v-if="createTaskLoading" class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></span>
+                    Create Task
+                  </button>
+                  <button
+                    type="button"
+                    @click="closeCreateTaskModal"
+                    class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:col-start-1 sm:text-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
@@ -298,17 +453,38 @@ import { useAdminStore } from '../stores/adminStore'
 const adminStore = useAdminStore()
 const selectedTask = ref(null)
 const showAssignmentModal = ref(false)
+const showCreateTaskModal = ref(false)
 const selectedEmployeeId = ref('')
+const selectedTaskId = ref('')
 const taskToAssign = ref(null)
 const statusFilter = ref('all')
 const priorityFilter = ref('all')
 const assignmentFilter = ref('all')
 const loading = ref(false)
 const assignmentLoading = ref(false)
+const createTaskLoading = ref(false)
 const error = ref(null)
+
+// New task form data
+const newTask = ref({
+  title: '',
+  description: '',
+  priority: 'medium',
+  status: 'todo',
+  assignedTo: '',
+  estimatedHours: 0,
+  dueDate: ''
+})
 
 const tasks = computed(() => adminStore.tasks)
 const employees = computed(() => adminStore.employees)
+
+const unassignedTasks = computed(() => {
+  if (!Array.isArray(tasks.value)) {
+    return []
+  }
+  return tasks.value.filter(task => !task.assignedTo)
+})
 
 const filteredTasks = computed(() => {
   if (!Array.isArray(tasks.value)) {
@@ -368,24 +544,16 @@ const closeModal = () => {
 
 const assignTask = (task) => {
   taskToAssign.value = task
+  selectedTaskId.value = task._id
   showAssignmentModal.value = true
 }
 
-const unassignTask = async (task) => {
-  try {
-    await adminStore.unassignTask(task.id)
-    await loadTasks()
-  } catch (error) {
-    console.error('Error unassigning task:', error)
-  }
-}
-
 const confirmAssignment = async () => {
-  if (!selectedEmployeeId.value || !taskToAssign.value) return
+  if (!selectedTaskId.value || !selectedEmployeeId.value) return
   
   assignmentLoading.value = true
   try {
-    await adminStore.assignTask(taskToAssign.value.id, selectedEmployeeId.value)
+    await adminStore.assignTask(selectedTaskId.value, selectedEmployeeId.value)
     await loadTasks()
     closeAssignmentModal()
   } catch (error) {
@@ -395,26 +563,66 @@ const confirmAssignment = async () => {
   }
 }
 
+const unassignTask = async (task) => {
+  try {
+    await adminStore.unassignTask(task._id)
+    await loadTasks()
+  } catch (error) {
+    console.error('Error unassigning task:', error)
+  }
+}
+
 const closeAssignmentModal = () => {
   showAssignmentModal.value = false
   selectedEmployeeId.value = ''
+  selectedTaskId.value = ''
   taskToAssign.value = null
 }
 
 const createNewTask = () => {
-  // Implement create new task functionality
-  console.log('Create new task')
+  showCreateTaskModal.value = true
+}
+
+const createTask = async () => {
+  createTaskLoading.value = true
+  try {
+    await adminStore.createTask(newTask.value)
+    await loadTasks()
+    closeCreateTaskModal()
+  } catch (error) {
+    console.error('Error creating task:', error)
+  } finally {
+    createTaskLoading.value = false
+  }
+}
+
+const closeCreateTaskModal = () => {
+  showCreateTaskModal.value = false
+  // Reset form
+  newTask.value = {
+    title: '',
+    description: '',
+    priority: 'medium',
+    status: 'todo',
+    assignedTo: '',
+    estimatedHours: 0,
+    dueDate: ''
+  }
 }
 
 const loadTasks = async () => {
   loading.value = true
   error.value = null
   try {
+    console.log('Loading tasks and employees...')
     await Promise.all([
       adminStore.fetchAllTasks(),
       adminStore.fetchEmployees()
     ])
+    console.log('Tasks loaded:', tasks.value?.length)
+    console.log('Employees loaded:', employees.value?.length)
   } catch (err) {
+    console.error('Error loading data:', err)
     error.value = err.message || 'Failed to load tasks'
   } finally {
     loading.value = false

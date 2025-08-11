@@ -2,8 +2,8 @@
   <div class="p-6">
     <!-- Header -->
     <div class="mb-8">
-      <h1 class="text-3xl font-bold text-gray-900">Executive Dashboard</h1>
-      <p class="text-gray-600 mt-2">Monitor your business performance and key metrics</p>
+      <h1 class="text-3xl font-bold text-gray-900">{{ companyName }} Admin Dashboard</h1>
+      <p class="text-gray-600 mt-2">Manage your employees, clients, and business operations</p>
     </div>
 
     <!-- Loading State -->
@@ -43,18 +43,18 @@
             <div class="flex-shrink-0">
               <div class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
                 <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
               </div>
             </div>
             <div class="ml-4">
-              <p class="text-sm font-medium text-gray-500">Monthly Revenue</p>
-              <p class="text-2xl font-semibold text-gray-900">${{ formatCurrency(dashboardMetrics.monthlyRevenue) }}</p>
+              <p class="text-sm font-medium text-gray-500">Total Employees</p>
+              <p class="text-2xl font-semibold text-gray-900">{{ dashboardMetrics.totalEmployees }}</p>
               <p class="text-sm text-green-600 flex items-center">
                 <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                   <path fill-rule="evenodd" d="M12 7a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0V8.414l-4.293 4.293a1 1 0 01-1.414 0L8 10.414l-4.293 4.293a1 1 0 01-1.414-1.414l5-5a1 1 0 011.414 0L11 10.586 14.586 7H12z" clip-rule="evenodd" />
                 </svg>
-                +{{ dashboardMetrics.revenueGrowth }}%
+                +{{ dashboardMetrics.employeeGrowth }}%
               </p>
             </div>
           </div>
@@ -232,8 +232,12 @@
 <script setup>
 import { onMounted, computed } from 'vue'
 import { useAdminStore } from '../stores/adminStore'
+import { useTenantBrandingStore } from '../stores/tenantBranding'
 
 const adminStore = useAdminStore()
+const tenantBrandingStore = useTenantBrandingStore()
+
+const companyName = computed(() => tenantBrandingStore.companyName)
 
 // Computed properties
 const dashboardAnalytics = computed(() => adminStore.dashboardAnalytics)

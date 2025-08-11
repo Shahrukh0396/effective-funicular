@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { config } from '@/config'
-import { authStore } from '@/stores/authStore'
+import { authService } from './authService'
 
 const billingData = ref({
   subscription: null,
@@ -15,7 +15,7 @@ export const billingService = {
   async fetchBillingData() {
     try {
       const response = await fetch(`${config.apiUrl}/api/billing/overview`, {
-        headers: authStore.getAuthHeaders()
+        headers: authService.getAuthHeaders()
       })
       
       const data = await response.json()
@@ -38,7 +38,7 @@ export const billingService = {
   async fetchInvoices(filters = {}) {
     try {
       const response = await fetch(`${config.apiUrl}/api/billing/invoices?${new URLSearchParams(filters)}`, {
-        headers: authStore.getAuthHeaders()
+        headers: authService.getAuthHeaders()
       })
       
       const data = await response.json()
@@ -57,7 +57,7 @@ export const billingService = {
   async fetchTransactions(filters = {}) {
     try {
       const response = await fetch(`${config.apiUrl}/api/billing/transactions?${new URLSearchParams(filters)}`, {
-        headers: authStore.getAuthHeaders()
+        headers: authService.getAuthHeaders()
       })
       
       const data = await response.json()
@@ -76,7 +76,7 @@ export const billingService = {
   async fetchPaymentMethods() {
     try {
       const response = await fetch(`${config.apiUrl}/api/billing/payment-methods`, {
-        headers: authStore.getAuthHeaders()
+        headers: authService.getAuthHeaders()
       })
       
       const data = await response.json()
@@ -97,7 +97,7 @@ export const billingService = {
       const response = await fetch(`${config.apiUrl}/api/billing/create-payment-intent`, {
         method: 'POST',
         headers: {
-          ...authStore.getAuthHeaders(),
+          ...authService.getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ amount, currency })
@@ -121,7 +121,7 @@ export const billingService = {
       const response = await fetch(`${config.apiUrl}/api/billing/payment-methods`, {
         method: 'POST',
         headers: {
-          ...authStore.getAuthHeaders(),
+          ...authService.getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(paymentMethodData)
@@ -144,7 +144,7 @@ export const billingService = {
     try {
       const response = await fetch(`${config.apiUrl}/api/billing/payment-methods/${paymentMethodId}`, {
         method: 'DELETE',
-        headers: authStore.getAuthHeaders()
+        headers: authService.getAuthHeaders()
       })
       
       const data = await response.json()
@@ -165,7 +165,7 @@ export const billingService = {
       const response = await fetch(`${config.apiUrl}/api/billing/subscription`, {
         method: 'PATCH',
         headers: {
-          ...authStore.getAuthHeaders(),
+          ...authService.getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(subscriptionData)
@@ -188,7 +188,7 @@ export const billingService = {
     try {
       const response = await fetch(`${config.apiUrl}/api/billing/subscription/cancel`, {
         method: 'POST',
-        headers: authStore.getAuthHeaders()
+        headers: authService.getAuthHeaders()
       })
       
       const data = await response.json()
@@ -207,7 +207,7 @@ export const billingService = {
   async downloadInvoice(invoiceId) {
     try {
       const response = await fetch(`${config.apiUrl}/api/billing/invoices/${invoiceId}/download`, {
-        headers: authStore.getAuthHeaders()
+        headers: authService.getAuthHeaders()
       })
       
       if (!response.ok) {
@@ -236,7 +236,7 @@ export const billingService = {
       const response = await fetch(`${config.apiUrl}/api/billing/invoices`, {
         method: 'POST',
         headers: {
-          ...authStore.getAuthHeaders(),
+          ...authService.getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -263,7 +263,7 @@ export const billingService = {
   async getBillingAnalytics(period = 'month') {
     try {
       const response = await fetch(`${config.apiUrl}/api/billing/analytics?period=${period}`, {
-        headers: authStore.getAuthHeaders()
+        headers: authService.getAuthHeaders()
       })
       
       const data = await response.json()
@@ -284,7 +284,7 @@ export const billingService = {
     try {
       const response = await fetch(`${config.apiUrl}/api/billing/stripe/setup-intent`, {
         method: 'POST',
-        headers: authStore.getAuthHeaders()
+        headers: authService.getAuthHeaders()
       })
       
       const data = await response.json()
@@ -305,7 +305,7 @@ export const billingService = {
       const response = await fetch(`${config.apiUrl}/api/billing/stripe/confirm-payment`, {
         method: 'POST',
         headers: {
-          ...authStore.getAuthHeaders(),
+          ...authService.getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({

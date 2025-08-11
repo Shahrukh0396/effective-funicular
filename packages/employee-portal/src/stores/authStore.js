@@ -25,10 +25,27 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await axios.post('/api/employee/login', { email, password })
-      const { token: newToken, user: userData } = response.data
+      const response = await axios.post('/api/employee/login', { 
+        email, 
+        password
+      })
+      
+      console.log('🔐 Auth Store: Full response data:', response.data)
+      
+      const { token: accessToken, user: userData } = response.data
+      
+      console.log('🔐 Auth Store: Destructured accessToken:', accessToken)
+      console.log('🔐 Auth Store: Destructured userData:', userData)
+      
       user.value = userData
-      setToken(newToken)
+      setToken(accessToken)
+      
+      // Force update the isAuthenticated computed property
+      console.log('🔐 Auth Store: Login successful, token set:', !!accessToken)
+      console.log('🔐 Auth Store: User set:', userData.email)
+      console.log('🔐 Auth Store: isAuthenticated should be:', !!accessToken)
+      console.log('🔐 Auth Store: Token stored in localStorage:', !!localStorage.getItem('employee_token'))
+      
       return true
     } catch (err) {
       error.value = err.response?.data?.message || 'Failed to login'
@@ -40,7 +57,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   const logout = async () => {
     try {
-      await axios.post('/api/employee/logout')
+      await axios.post('/api/auth/logout')
     } catch (err) {
       console.error('Logout error:', err)
     } finally {
@@ -52,8 +69,8 @@ export const useAuthStore = defineStore('auth', () => {
   const checkAuth = async () => {
     if (!token.value) return false
     try {
-      const response = await axios.get('/api/employee/me')
-      user.value = response.data
+      const response = await axios.get('/api/auth/me')
+      user.value = response.data.data.user
       return true
     } catch (err) {
       setToken(null)
@@ -67,6 +84,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const getAuthHeaders = () => {
+    console.log('🔍 Auth Store - Token value:', token.value ? 'Present' : 'Missing')
+    console.log('🔍 Auth Store - Token length:', token.value?.length || 0)
     return {
       'Authorization': `Bearer ${token.value}`,
       'Content-Type': 'application/json'

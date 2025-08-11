@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/authStore'
 import Landing from '../views/Landing.vue'
+import Home from '../views/Home.vue'
 import Login from '../views/Login.vue'
 import Dashboard from '../views/Dashboard.vue'
 import MyTasks from '../views/MyTasks.vue'
@@ -17,6 +18,12 @@ const routes = [
     name: 'Landing',
     component: Landing,
     meta: { requiresAuth: false }
+  },
+  {
+    path: '/home',
+    name: 'Home',
+    component: Home,
+    meta: { requiresAuth: true }
   },
   {
     path: '/login',
@@ -89,16 +96,32 @@ router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth)
 
-  // Check if the user is authenticated
-  const isAuthenticated = await authStore.checkAuth()
+  // Use the auth store's computed isAuthenticated property instead of checkAuth()
+  const isAuthenticated = authStore.isAuthenticated
+
+  console.log('🔐 Employee Router Guard:', {
+    to: to.path,
+    from: from.path,
+    isAuthenticated,
+    requiresAuth,
+    token: !!authStore.token,
+    user: !!authStore.user
+  })
 
   if (requiresAuth && !isAuthenticated) {
     // Redirect to login if trying to access a protected route while not authenticated
+    console.log('🔐 Redirecting to login - requires auth but not authenticated')
     next('/login')
   } else if (to.path === '/login' && isAuthenticated) {
-    // Redirect to dashboard if trying to access login while authenticated
-    next('/dashboard')
+    // Redirect to home if trying to access login while authenticated
+    console.log('🔐 Redirecting to home - authenticated user trying to access login')
+    next('/home')
+  } else if (to.path === '/' && isAuthenticated) {
+    // Redirect to home if authenticated user on landing page
+    console.log('🔐 Redirecting to home - authenticated user on landing page')
+    next('/home')
   } else {
+    console.log('🔐 Proceeding to:', to.path)
     next()
   }
 })

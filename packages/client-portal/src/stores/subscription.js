@@ -1,11 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import axios from 'axios'
+import { authService } from '@/services/authService'
 import { config } from '@/config'
-import { useAuthStore } from './auth'
 
 export const useSubscriptionStore = defineStore('subscription', () => {
-  const authStore = useAuthStore()
   const currentPlan = ref(null)
   const paymentMethod = ref(null)
   const loading = ref(false)
@@ -16,16 +14,20 @@ export const useSubscriptionStore = defineStore('subscription', () => {
       loading.value = true
       error.value = null
       
-      const response = await axios.get(`${config.apiUrl}/api/subscriptions/current`, {
-        headers: {
-          Authorization: `Bearer ${await authStore.user.getIdToken()}`
-        }
+      const response = await fetch(`${config.apiUrl}/api/subscriptions/current`, {
+        headers: authService.getAuthHeaders()
       })
       
-      currentPlan.value = response.data.subscription
-      paymentMethod.value = response.data.paymentMethod
+      const data = await response.json()
       
-      return response.data
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to fetch subscription')
+      }
+      
+      currentPlan.value = data.data.subscription
+      paymentMethod.value = data.data.paymentMethod
+      
+      return data
     } catch (err) {
       error.value = err.message
       throw err
@@ -39,18 +41,23 @@ export const useSubscriptionStore = defineStore('subscription', () => {
       loading.value = true
       error.value = null
       
-      const response = await axios.post(
-        `${config.apiUrl}/api/subscriptions/update`,
-        { priceId },
-        {
-          headers: {
-            Authorization: `Bearer ${await authStore.user.getIdToken()}`
-          }
-        }
-      )
+      const response = await fetch(`${config.apiUrl}/api/subscriptions/update`, {
+        method: 'POST',
+        headers: {
+          ...authService.getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ priceId })
+      })
       
-      currentPlan.value = response.data.subscription
-      return response.data
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to update subscription')
+      }
+      
+      currentPlan.value = data.data.subscription
+      return data
     } catch (err) {
       error.value = err.message
       throw err
@@ -64,15 +71,16 @@ export const useSubscriptionStore = defineStore('subscription', () => {
       loading.value = true
       error.value = null
       
-      await axios.post(
-        `${config.apiUrl}/api/subscriptions/cancel`,
-        {},
-        {
-          headers: {
-            Authorization: `Bearer ${await authStore.user.getIdToken()}`
-          }
-        }
-      )
+      const response = await fetch(`${config.apiUrl}/api/subscriptions/cancel`, {
+        method: 'POST',
+        headers: authService.getAuthHeaders()
+      })
+      
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to cancel subscription')
+      }
       
       currentPlan.value = null
     } catch (err) {

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useUserStore, ROLES } from './userStore'
-import axios from '../config/axios'
+import { taskService } from '../services/taskService'
 
 export const TASK_TYPES = {
   DEVELOPMENT: 'development',
@@ -78,11 +78,17 @@ export const useTaskStore = defineStore('tasks', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await axios.get('/api/employee/tasks/available')
-      availableTasks.value = response.data
-      return response.data
+      console.log('🔍 TaskStore - Fetching available tasks...')
+      const response = await taskService.fetchTasks({ status: 'available' })
+      console.log('🔍 TaskStore - Available tasks response:', response)
+      
+      // The backend returns an array directly for available tasks
+      availableTasks.value = Array.isArray(response) ? response : []
+      
+      console.log('🔍 TaskStore - Available tasks set:', availableTasks.value)
+      return availableTasks.value
     } catch (err) {
-      error.value = err.response?.data?.message || 'Failed to fetch available tasks'
+      error.value = err.message || 'Failed to fetch available tasks'
       console.error('Error fetching available tasks:', err)
       throw err
     } finally {
@@ -94,11 +100,17 @@ export const useTaskStore = defineStore('tasks', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await axios.get('/api/employee/tasks/my-tasks')
-      myTasks.value = response.data
-      return response.data
+      console.log('🔍 TaskStore - Fetching my tasks...')
+      const response = await taskService.fetchTasks({ assignedTo: 'me' })
+      console.log('🔍 TaskStore - My tasks response:', response)
+      
+      // The backend returns an array directly for my tasks
+      myTasks.value = Array.isArray(response) ? response : []
+      
+      console.log('🔍 TaskStore - My tasks set:', myTasks.value)
+      return myTasks.value
     } catch (err) {
-      error.value = err.response?.data?.message || 'Failed to fetch my tasks'
+      error.value = err.message || 'Failed to fetch my tasks'
       console.error('Error fetching my tasks:', err)
       throw err
     } finally {
@@ -110,11 +122,15 @@ export const useTaskStore = defineStore('tasks', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await axios.get('/api/employee/tasks/history')
-      taskHistory.value = response.data
-      return response.data
+      const response = await taskService.fetchTasks({ status: 'completed' })
+      if (response.success && response.data) {
+        taskHistory.value = response.data.tasks || response.data
+      } else {
+        taskHistory.value = response.data || []
+      }
+      return taskHistory.value
     } catch (err) {
-      error.value = err.response?.data?.message || 'Failed to fetch task history'
+      error.value = err.message || 'Failed to fetch task history'
       console.error('Error fetching task history:', err)
       throw err
     } finally {
@@ -125,13 +141,13 @@ export const useTaskStore = defineStore('tasks', () => {
   const claimTask = async (taskId) => {
     error.value = null
     try {
-      const response = await axios.post(`/api/employee/tasks/${taskId}/claim`)
+      const response = await taskService.claimTask(taskId)
       // Refresh tasks
       await fetchAvailableTasks()
       await fetchMyTasks()
-      return response.data
+      return response
     } catch (err) {
-      error.value = err.response?.data?.message || 'Failed to claim task'
+      error.value = err.message || 'Failed to claim task'
       console.error('Error claiming task:', err)
       throw err
     }
@@ -140,13 +156,13 @@ export const useTaskStore = defineStore('tasks', () => {
   const unclaimTask = async (taskId) => {
     error.value = null
     try {
-      const response = await axios.post(`/api/employee/tasks/${taskId}/unclaim`)
+      const response = await taskService.unclaimTask(taskId)
       // Refresh tasks
       await fetchAvailableTasks()
       await fetchMyTasks()
-      return response.data
+      return response
     } catch (err) {
-      error.value = err.response?.data?.message || 'Failed to unclaim task'
+      error.value = err.message || 'Failed to unclaim task'
       console.error('Error unclaiming task:', err)
       throw err
     }
@@ -155,12 +171,15 @@ export const useTaskStore = defineStore('tasks', () => {
   const startTask = async (taskId) => {
     error.value = null
     try {
-      const response = await axios.post(`/api/employee/tasks/${taskId}/start`)
+      const response = await taskService.updateTask(taskId, { 
+        status: 'in-progress',
+        startedAt: new Date().toISOString()
+      })
       // Refresh tasks
       await fetchMyTasks()
-      return response.data
+      return response
     } catch (err) {
-      error.value = err.response?.data?.message || 'Failed to start task'
+      error.value = err.message || 'Failed to start task'
       console.error('Error starting task:', err)
       throw err
     }
@@ -169,12 +188,15 @@ export const useTaskStore = defineStore('tasks', () => {
   const stopTask = async (taskId) => {
     error.value = null
     try {
-      const response = await axios.post(`/api/employee/tasks/${taskId}/stop`)
+      const response = await taskService.updateTask(taskId, { 
+        status: 'todo',
+        stoppedAt: new Date().toISOString()
+      })
       // Refresh tasks
       await fetchMyTasks()
-      return response.data
+      return response
     } catch (err) {
-      error.value = err.response?.data?.message || 'Failed to stop task'
+      error.value = err.message || 'Failed to stop task'
       console.error('Error stopping task:', err)
       throw err
     }
@@ -183,16 +205,29 @@ export const useTaskStore = defineStore('tasks', () => {
   const updateTaskStatus = async (taskId, status) => {
     error.value = null
     try {
-      const response = await axios.put(`/api/employee/tasks/${taskId}/update-status`, {
-        status
-      })
+      const response = await taskService.updateTask(taskId, { status })
       // Refresh tasks
       await fetchMyTasks()
       await fetchAvailableTasks()
-      return response.data
+      return response
     } catch (err) {
-      error.value = err.response?.data?.message || 'Failed to update task status'
+      error.value = err.message || 'Failed to update task status'
       console.error('Error updating task status:', err)
+      throw err
+    }
+  }
+
+  const updateTaskProgress = async (taskId, progress) => {
+    error.value = null
+    try {
+      const response = await taskService.updateTask(taskId, { progress })
+      // Refresh tasks
+      await fetchMyTasks()
+      await fetchAvailableTasks()
+      return response
+    } catch (err) {
+      error.value = err.message || 'Failed to update task progress'
+      console.error('Error updating task progress:', err)
       throw err
     }
   }
@@ -205,17 +240,29 @@ export const useTaskStore = defineStore('tasks', () => {
   const submitTask = async (taskId, submission) => {
     error.value = null
     try {
-      const response = await axios.put(`/api/employee/tasks/${taskId}/update-status`, {
+      const response = await taskService.updateTask(taskId, {
         status: 'done',
         submission,
         submissionTime: new Date().toISOString()
       })
       await fetchMyTasks()
       await fetchTaskHistory()
-      return response.data
+      return response
     } catch (err) {
-      error.value = err.response?.data?.message || 'Failed to submit task'
+      error.value = err.message || 'Failed to submit task'
       console.error('Error submitting task:', err)
+      throw err
+    }
+  }
+
+  const getTaskById = async (taskId) => {
+    error.value = null
+    try {
+      const response = await taskService.getTaskById(taskId)
+      return response
+    } catch (err) {
+      error.value = err.message || 'Failed to fetch task details'
+      console.error('Error fetching task details:', err)
       throw err
     }
   }
@@ -242,8 +289,10 @@ export const useTaskStore = defineStore('tasks', () => {
     startTask,
     stopTask,
     updateTaskStatus,
+    updateTaskProgress,
     pickTask,
     submitTask,
+    getTaskById,
     clearError
   }
 }) 

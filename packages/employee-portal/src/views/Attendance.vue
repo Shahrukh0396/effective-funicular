@@ -1,5 +1,100 @@
 <template>
   <div class="space-y-6">
+    <!-- Current Status Card -->
+    <div class="bg-white rounded-lg shadow p-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-gray-900">Today's Status</h2>
+          <p class="text-sm text-gray-600">{{ formatDate(new Date()) }}</p>
+        </div>
+        <div class="flex items-center space-x-4">
+          <!-- Current Status Indicator -->
+          <div class="flex items-center space-x-2">
+            <div 
+              class="w-3 h-3 rounded-full"
+              :class="getCurrentStatusColor"
+            ></div>
+            <span class="text-sm font-medium text-gray-700">
+              {{ getCurrentStatusText }}
+            </span>
+          </div>
+          
+          <!-- Check In/Out Buttons -->
+          <div class="flex space-x-2">
+            <button
+              v-if="attendanceStore.canCheckIn"
+              @click="handleCheckIn"
+              :disabled="attendanceStore.loading"
+              class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm font-medium"
+            >
+              <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+              </svg>
+              Check In
+            </button>
+            
+            <button
+              v-if="attendanceStore.canStartBreak"
+              @click="handleStartBreak"
+              :disabled="attendanceStore.loading"
+              class="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 disabled:opacity-50 text-sm font-medium"
+            >
+              <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              Start Break
+            </button>
+            
+            <button
+              v-if="attendanceStore.canEndBreak"
+              @click="handleEndBreak"
+              :disabled="attendanceStore.loading"
+              class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+            >
+              <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              End Break
+            </button>
+            
+            <button
+              v-if="attendanceStore.canCheckOut"
+              @click="handleCheckOut"
+              :disabled="attendanceStore.loading"
+              class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm font-medium"
+            >
+              <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+              </svg>
+              Check Out
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Today's Hours -->
+      <div v-if="attendanceStore.currentStatus" class="mt-4 grid grid-cols-3 gap-4">
+        <div class="text-center">
+          <div class="text-2xl font-bold text-gray-900">
+            {{ formatTime(attendanceStore.currentStatus.checkInTime) }}
+          </div>
+          <div class="text-sm text-gray-600">Check In</div>
+        </div>
+        <div class="text-center">
+          <div class="text-2xl font-bold text-gray-900">
+            {{ attendanceStore.currentStatus.checkOutTime ? formatTime(attendanceStore.currentStatus.checkOutTime) : '--:--' }}
+          </div>
+          <div class="text-sm text-gray-600">Check Out</div>
+        </div>
+        <div class="text-center">
+          <div class="text-2xl font-bold text-gray-900">
+            {{ attendanceStore.totalHoursToday.toFixed(1) }}h
+          </div>
+          <div class="text-sm text-gray-600">Total Hours</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
@@ -19,7 +114,7 @@
         />
         <button
           @click="fetchAttendanceHistory"
-          :disabled="loading"
+          :disabled="attendanceStore.loading"
           class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
         >
           Filter
@@ -100,7 +195,7 @@
         <h2 class="text-lg font-semibold text-gray-900">Attendance Records</h2>
       </div>
       
-      <div v-if="loading" class="p-6 text-center">
+      <div v-if="attendanceStore.loading" class="p-6 text-center">
         <svg class="animate-spin h-8 w-8 text-indigo-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -108,7 +203,7 @@
         <p class="mt-2 text-gray-600">Loading attendance records...</p>
       </div>
       
-      <div v-else-if="attendanceHistory.length === 0" class="p-6 text-center">
+      <div v-else-if="attendanceStore.attendanceHistory.length === 0" class="p-6 text-center">
         <svg class="h-12 w-12 text-gray-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
         </svg>
@@ -141,7 +236,7 @@
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
             <tr
-              v-for="record in attendanceHistory"
+              v-for="record in attendanceStore.attendanceHistory"
               :key="record._id"
               class="hover:bg-gray-50"
             >
@@ -234,12 +329,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import axios from 'axios'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useAttendanceStore } from '../stores/attendanceStore'
+
+// Store
+const attendanceStore = useAttendanceStore()
 
 // Reactive data
-const loading = ref(false)
-const attendanceHistory = ref([])
 const startDate = ref('')
 const endDate = ref('')
 const showDetailsModal = ref(false)
@@ -247,9 +343,9 @@ const selectedRecord = ref({})
 
 // Computed properties
 const stats = computed(() => {
-  const totalDays = attendanceHistory.value.length
-  const presentDays = attendanceHistory.value.filter(r => r.status === 'present').length
-  const totalHours = attendanceHistory.value.reduce((sum, r) => sum + (r.totalHours || 0), 0)
+  const totalDays = attendanceStore.attendanceHistory.length
+  const presentDays = attendanceStore.attendanceHistory.filter(r => r.status === 'present').length
+  const totalHours = attendanceStore.attendanceHistory.reduce((sum, r) => sum + (r.totalHours || 0), 0)
   const averageHoursPerDay = presentDays > 0 ? totalHours / presentDays : 0
   
   return {
@@ -261,19 +357,60 @@ const stats = computed(() => {
 })
 
 // Methods
-const fetchAttendanceHistory = async () => {
-  loading.value = true
+const handleCheckIn = async () => {
   try {
-    const params = {}
-    if (startDate.value) params.startDate = startDate.value
-    if (endDate.value) params.endDate = endDate.value
+    await attendanceStore.checkIn()
+    alert('Successfully checked in!')
+  } catch (error) {
+    alert('Failed to check in: ' + error.message)
+  }
+}
+
+const handleCheckOut = async () => {
+  try {
+    await attendanceStore.checkOut()
+    alert('Successfully checked out!')
+  } catch (error) {
+    alert('Failed to check out: ' + error.message)
+  }
+}
+
+const handleStartBreak = async () => {
+  try {
+    const reason = prompt('Reason for break (lunch, coffee, meeting, personal, other):', 'lunch')
+    if (reason === null) return // User cancelled
     
-    const response = await axios.get('/api/employee/attendance/history', { params })
-    attendanceHistory.value = response.data
+    const notes = prompt('Additional notes (optional):', '')
+    if (notes === null) return // User cancelled
+    
+    await attendanceStore.startBreak(reason, notes)
+    alert('Break started successfully!')
+  } catch (error) {
+    alert('Failed to start break: ' + error.message)
+  }
+}
+
+const handleEndBreak = async () => {
+  try {
+    const notes = prompt('Break notes (optional):', '')
+    if (notes === null) return // User cancelled
+    
+    await attendanceStore.endBreak(notes)
+    alert('Break ended successfully!')
+  } catch (error) {
+    alert('Failed to end break: ' + error.message)
+  }
+}
+
+const fetchAttendanceHistory = async () => {
+  try {
+    const filters = {}
+    if (startDate.value) filters.startDate = startDate.value
+    if (endDate.value) filters.endDate = endDate.value
+    
+    await attendanceStore.fetchAttendanceHistory(filters)
   } catch (error) {
     console.error('Error fetching attendance history:', error)
-  } finally {
-    loading.value = false
   }
 }
 
@@ -306,12 +443,38 @@ const getStatusClass = (status) => {
   return classes[status] || 'bg-gray-100 text-gray-800'
 }
 
+const getCurrentStatusColor = computed(() => {
+  if (attendanceStore.isCheckedIn && attendanceStore.isCheckedOut) {
+    return 'bg-gray-500'
+  } else if (attendanceStore.onBreak) {
+    return 'bg-yellow-500'
+  } else if (attendanceStore.isCheckedIn) {
+    return 'bg-green-500'
+  } else {
+    return 'bg-red-500'
+  }
+})
+
+const getCurrentStatusText = computed(() => {
+  if (attendanceStore.isCheckedIn && attendanceStore.isCheckedOut) {
+    return 'Checked Out'
+  } else if (attendanceStore.onBreak) {
+    return 'On Break'
+  } else if (attendanceStore.isCheckedIn) {
+    return 'Checked In'
+  } else {
+    return 'Not Checked In'
+  }
+})
+
 const viewDetails = (record) => {
   selectedRecord.value = record
   showDetailsModal.value = true
 }
 
-onMounted(() => {
+onMounted(async () => {
+  console.log('🔍 Attendance - Component mounted')
+  
   // Set default date range to last 30 days
   const end = new Date()
   const start = new Date()
@@ -320,6 +483,19 @@ onMounted(() => {
   endDate.value = end.toISOString().split('T')[0]
   startDate.value = start.toISOString().split('T')[0]
   
-  fetchAttendanceHistory()
+  // Load current status and history
+  try {
+    await Promise.all([
+      attendanceStore.fetchCurrentStatus(),
+      fetchAttendanceHistory()
+    ])
+  } catch (error) {
+    console.error('Error loading attendance data:', error)
+  }
 })
+
+// Watch for attendance status changes to ensure UI updates
+watch(() => attendanceStore.currentStatus, (newStatus) => {
+  console.log('🔍 Attendance Page - Status updated:', newStatus)
+}, { deep: true })
 </script> 

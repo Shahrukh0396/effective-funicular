@@ -358,7 +358,7 @@ const formatDate = (date) => {
 
 const refreshClients = async () => {
   try {
-    await adminStore.fetchClientAnalytics()
+    await adminStore.fetchClients()
   } catch (error) {
     console.error('Failed to refresh clients:', error)
   }
@@ -403,7 +403,7 @@ const addClient = async () => {
 // Load data on mount
 onMounted(async () => {
   try {
-    await adminStore.fetchClientAnalytics()
+    await adminStore.fetchClients()
   } catch (error) {
     console.error('Failed to load clients:', error)
   }

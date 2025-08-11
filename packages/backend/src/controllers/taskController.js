@@ -24,8 +24,8 @@ const getTasks = async (req, res) => {
     // Add vendor filtering
     if (req.vendorFilter) {
       Object.assign(filter, req.vendorFilter)
-    } else if (req.user && req.user.vendor) {
-      filter.vendor = req.user.vendor
+    } else if (req.user && req.user.vendorId) {
+      filter.vendor = req.user.vendorId
     }
     
     if (req.user.role === 'client') {
@@ -46,11 +46,16 @@ const getTasks = async (req, res) => {
     // Admin can see all tasks
 
     // Add additional filters
-    if (project) filter.project = project
+    if (project) {
+      filter.project = project
+      console.log('🔍 Task filter - Project ID:', project)
+    }
     if (status) filter.status = status
     if (priority) filter.priority = priority
     if (assignedTo) filter.assignedTo = assignedTo
     if (sprint) filter.sprint = sprint
+    
+    console.log('🔍 Final task filter:', filter)
 
     // Build sort object
     const sort = {}
@@ -67,6 +72,9 @@ const getTasks = async (req, res) => {
       .limit(parseInt(limit))
 
     const total = await Task.countDocuments(filter)
+    
+    console.log('🔍 Tasks found:', tasks.length)
+    console.log('🔍 Total tasks count:', total)
 
     res.json({
       success: true,
@@ -96,8 +104,8 @@ const getTaskById = async (req, res) => {
     const filter = { _id: req.params.id }
     if (req.vendorFilter) {
       Object.assign(filter, req.vendorFilter)
-    } else if (req.user && req.user.vendor) {
-      filter.vendor = req.user.vendor
+    } else if (req.user && req.user.vendorId) {
+      filter.vendor = req.user.vendorId
     }
     
     const task = await Task.findOne(filter)
@@ -184,11 +192,19 @@ const createTask = async (req, res) => {
       })
     }
 
+    // Clients cannot create tasks
+    if (req.user.role === 'client') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Clients cannot create tasks.'
+      })
+    }
+
     // Check permissions
-    const canCreateTask = req.user.role === 'admin' ||
-                         projectDoc.client.toString() === req.user._id.toString() ||
-                         projectDoc.team.some(member => member.user.toString() === req.user._id.toString()) ||
-                         projectDoc.projectManager.toString() === req.user._id.toString()
+    const canCreateTask = ['admin', 'super_admin', 'employee'].includes(req.user.role) ||
+                         (projectDoc.client && projectDoc.client.toString() === req.user._id.toString()) ||
+                         (projectDoc.team && projectDoc.team.some(member => member.user && member.user.toString() === req.user._id.toString())) ||
+                         (projectDoc.projectManager && projectDoc.projectManager.toString() === req.user._id.toString())
 
     if (!canCreateTask) {
       return res.status(403).json({
@@ -208,6 +224,16 @@ const createTask = async (req, res) => {
       }
     }
 
+    // Set vendor for task
+    let taskVendor = req.user.vendorId
+    if (!taskVendor && req.user.role === 'super_admin') {
+      // For super admin, get vendor from project
+      const projectDoc = await Project.findById(project)
+      if (projectDoc && projectDoc.vendorId) {
+        taskVendor = projectDoc.vendorId
+      }
+    }
+
     const task = new Task({
       title,
       description,
@@ -223,7 +249,7 @@ const createTask = async (req, res) => {
       acceptanceCriteria,
       parentTask,
       createdBy: req.user._id,
-      vendor: req.user.vendor
+      vendor: taskVendor
     })
 
     await task.save()
@@ -272,9 +298,9 @@ const updateTask = async (req, res) => {
     const canEdit = req.user.role === 'admin' ||
                    task.createdBy.toString() === req.user._id.toString() ||
                    task.assignedTo?.toString() === req.user._id.toString() ||
-                   project.client.toString() === req.user._id.toString() ||
-                   project.team.some(member => member.user.toString() === req.user._id.toString()) ||
-                   project.projectManager.toString() === req.user._id.toString()
+                   (project.client && project.client.toString() === req.user._id.toString()) ||
+                   (project.team && project.team.some(member => member.user && member.user.toString() === req.user._id.toString())) ||
+                   (project.projectManager && project.projectManager.toString() === req.user._id.toString())
 
     if (!canEdit) {
       return res.status(403).json({

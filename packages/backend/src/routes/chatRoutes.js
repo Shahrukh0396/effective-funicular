@@ -56,6 +56,16 @@ const router = express.Router()
 // Chat routes use user authentication and get vendor info from user
 
 /**
+ * @route   POST /api/chat/support
+ * @desc    Create or get support conversation
+ * @access  Private
+ */
+router.post('/support', [
+  auth,
+  body('message').optional().isString().withMessage('Message must be a string')
+], chatController.createSupportConversation)
+
+/**
  * @route   GET /api/chat/conversations
  * @desc    Get user conversations
  * @access  Private
@@ -63,11 +73,28 @@ const router = express.Router()
 router.get('/conversations', auth, chatController.getUserConversations)
 
 /**
- * @route   GET /api/chat/users
- * @desc    Get available users for new conversations
+ * @route   GET /api/chat/channels
+ * @desc    Get default channels for vendor
  * @access  Private
  */
-router.get('/users', auth, chatController.getAvailableUsers)
+router.get('/channels', auth, chatController.getDefaultChannels)
+
+/**
+ * @route   POST /api/chat/conversations/:conversationId/join
+ * @desc    Join a channel
+ * @access  Private
+ */
+router.post('/conversations/:conversationId/join', auth, chatController.joinChannel)
+
+/**
+ * @route   POST /api/chat/support
+ * @desc    Create or get support conversation
+ * @access  Private
+ */
+router.post('/support', [
+  auth,
+  body('message').optional().isString().withMessage('Message must be a string')
+], chatController.createSupportConversation)
 
 /**
  * @route   GET /api/chat/conversations/:conversationId/messages
@@ -77,139 +104,54 @@ router.get('/users', auth, chatController.getAvailableUsers)
 router.get('/conversations/:conversationId/messages', auth, chatController.getConversationMessages)
 
 /**
- * @route   POST /api/chat/conversations
- * @desc    Create conversation (direct or group)
- * @access  Private
- */
-router.post('/conversations', [
-  auth,
-  body('type')
-    .isIn(['direct', 'group'])
-    .withMessage('Type must be either direct or group'),
-  body('participantId')
-    .if(body('type').equals('direct'))
-    .isMongoId()
-    .withMessage('Valid participant ID is required for direct conversations'),
-  body('name')
-    .if(body('type').equals('group'))
-    .trim()
-    .isLength({ min: 1, max: 100 })
-    .withMessage('Conversation name must be between 1 and 100 characters'),
-  body('participantIds')
-    .if(body('type').equals('group'))
-    .isArray({ min: 1 })
-    .withMessage('At least one participant is required for group conversations'),
-  body('participantIds.*')
-    .if(body('type').equals('group'))
-    .isMongoId()
-    .withMessage('Valid participant IDs are required')
-], chatController.createConversation)
-
-/**
- * @route   POST /api/chat/conversations/direct
- * @desc    Create direct conversation
- * @access  Private
- */
-router.post('/conversations/direct', [
-  auth,
-  body('participantId')
-    .isMongoId()
-    .withMessage('Valid participant ID is required')
-], chatController.createDirectConversation)
-
-/**
- * @route   POST /api/chat/conversations/group
- * @desc    Create group conversation
- * @access  Private
- */
-router.post('/conversations/group', [
-  auth,
-  body('name')
-    .trim()
-    .isLength({ min: 1, max: 100 })
-    .withMessage('Conversation name must be between 1 and 100 characters'),
-  body('participantIds')
-    .isArray({ min: 1 })
-    .withMessage('At least one participant is required'),
-  body('participantIds.*')
-    .isMongoId()
-    .withMessage('Valid participant IDs are required'),
-  body('description')
-    .optional()
-    .trim()
-    .isLength({ max: 500 })
-    .withMessage('Description cannot exceed 500 characters'),
-  body('isPrivate')
-    .optional()
-    .isBoolean()
-    .withMessage('isPrivate must be a boolean')
-], chatController.createGroupConversation)
-
-/**
  * @route   POST /api/chat/conversations/:conversationId/messages
  * @desc    Send text message
  * @access  Private
  */
 router.post('/conversations/:conversationId/messages', [
   auth,
-  body('content')
-    .trim()
-    .isLength({ min: 1, max: 5000 })
-    .withMessage('Message content must be between 1 and 5000 characters'),
-  body('replyTo')
-    .optional()
-    .isMongoId()
-    .withMessage('Valid reply message ID is required')
+  body('content').trim().isLength({ min: 1, max: 5000 }).withMessage('Message content is required and must be less than 5000 characters')
 ], chatController.sendTextMessage)
 
 /**
- * @route   POST /api/chat/messages/text
- * @desc    Send text message
- * @access  Private
- */
-router.post('/messages/text', [
-  auth,
-  body('conversationId')
-    .isMongoId()
-    .withMessage('Valid conversation ID is required'),
-  body('content')
-    .trim()
-    .isLength({ min: 1, max: 5000 })
-    .withMessage('Message content must be between 1 and 5000 characters'),
-  body('replyTo')
-    .optional()
-    .isMongoId()
-    .withMessage('Valid reply message ID is required')
-], chatController.sendTextMessage)
-
-/**
- * @route   POST /api/chat/conversations/:conversationId/files
+ * @route   POST /api/chat/messages/upload
  * @desc    Send file message
  * @access  Private
  */
-router.post('/conversations/:conversationId/files', [
+router.post('/messages/upload', [
   auth,
-  body('replyTo')
-    .optional()
-    .isMongoId()
-    .withMessage('Valid reply message ID is required')
-], upload.array('files', 5), chatController.sendFileMessage)
+  upload.array('files', 5)
+], chatController.sendFileMessage)
 
 /**
- * @route   POST /api/chat/messages/file
- * @desc    Send file message
+ * @route   POST /api/chat/conversations
+ * @desc    Create conversation (direct, group, or channel)
  * @access  Private
  */
-router.post('/messages/file', [
+router.post('/conversations', [
   auth,
-  body('conversationId')
-    .isMongoId()
-    .withMessage('Valid conversation ID is required'),
-  body('replyTo')
-    .optional()
-    .isMongoId()
-    .withMessage('Valid reply message ID is required')
-], upload.array('files', 5), chatController.sendFileMessage)
+  body('type').isIn(['direct', 'group', 'channel']).withMessage('Invalid conversation type'),
+  body('name').optional().trim().isLength({ min: 1, max: 100 }).withMessage('Name must be between 1 and 100 characters'),
+  body('participantId').optional().isMongoId().withMessage('Invalid participant ID'),
+  body('participantIds').optional().isArray().withMessage('Participant IDs must be an array'),
+  body('channelType').optional().isIn(['general', 'random', 'project', 'custom']).withMessage('Invalid channel type'),
+  body('purpose').optional().trim().isLength({ max: 500 }).withMessage('Purpose must be less than 500 characters'),
+  body('topic').optional().trim().isLength({ max: 250 }).withMessage('Topic must be less than 250 characters')
+], chatController.createConversation)
+
+/**
+ * @route   GET /api/chat/users
+ * @desc    Get available users for new conversations
+ * @access  Private
+ */
+router.get('/users', auth, chatController.getAvailableUsers)
+
+/**
+ * @route   GET /api/chat/search
+ * @desc    Search messages
+ * @access  Private
+ */
+router.get('/search', auth, chatController.searchMessages)
 
 /**
  * @route   POST /api/chat/messages/:messageId/reactions
@@ -218,10 +160,7 @@ router.post('/messages/file', [
  */
 router.post('/messages/:messageId/reactions', [
   auth,
-  body('emoji')
-    .trim()
-    .isLength({ min: 1, max: 10 })
-    .withMessage('Emoji must be between 1 and 10 characters')
+  body('emoji').trim().isLength({ min: 1, max: 10 }).withMessage('Emoji is required and must be less than 10 characters')
 ], chatController.addReaction)
 
 /**
@@ -231,10 +170,7 @@ router.post('/messages/:messageId/reactions', [
  */
 router.put('/messages/:messageId', [
   auth,
-  body('content')
-    .trim()
-    .isLength({ min: 1, max: 5000 })
-    .withMessage('Message content must be between 1 and 5000 characters')
+  body('content').trim().isLength({ min: 1, max: 5000 }).withMessage('Message content is required and must be less than 5000 characters')
 ], chatController.editMessage)
 
 /**

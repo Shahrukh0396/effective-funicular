@@ -75,21 +75,96 @@
             </div>
           </div>
         </div>
+        
+        <!-- Mobile menu button -->
+        <div class="flex items-center sm:hidden">
+          <button
+            @click="mobileMenuOpen = !mobileMenuOpen"
+            class="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+          >
+            <span class="sr-only">Open main menu</span>
+            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      
+      <!-- Mobile menu -->
+      <div v-if="mobileMenuOpen" class="sm:hidden">
+        <div class="pt-2 pb-3 space-y-1">
+          <!-- Mobile Attendance Status -->
+          <div class="px-3 py-2 border-b border-gray-200">
+            <div class="flex items-center">
+              <div class="w-2 h-2 rounded-full mr-2" :class="attendanceStatusClass"></div>
+              <span class="text-sm text-gray-600">{{ attendanceStatusText }}</span>
+            </div>
+          </div>
+          
+          <router-link
+            v-for="item in navigationItems"
+            :key="item.path"
+            :to="item.path"
+            class="block pl-3 pr-4 py-2 border-l-4 text-base font-medium"
+            :class="[
+              $route.path === item.path
+                ? 'bg-indigo-50 border-indigo-500 text-indigo-700'
+                : 'border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800'
+            ]"
+            @click="mobileMenuOpen = false"
+          >
+            <svg v-if="item.icon" class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon"></path>
+            </svg>
+            {{ item.name }}
+          </router-link>
+        </div>
+        
+        <!-- Mobile user menu -->
+        <div class="pt-4 pb-3 border-t border-gray-200">
+          <div class="flex items-center px-4">
+            <div class="flex-shrink-0">
+              <div class="h-8 w-8 rounded-full bg-indigo-600 flex items-center justify-center">
+                <span class="text-white font-medium">{{ userInitials }}</span>
+              </div>
+            </div>
+            <div class="ml-3">
+              <div class="text-base font-medium text-gray-800">{{ authStore.user?.firstName }} {{ authStore.user?.lastName }}</div>
+              <div class="text-sm font-medium text-gray-500">{{ authStore.user?.email }}</div>
+            </div>
+          </div>
+          <div class="mt-3 space-y-1">
+            <router-link
+              to="/profile"
+              class="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+              @click="mobileMenuOpen = false"
+            >
+              Profile Settings
+            </router-link>
+            <button
+              @click="handleLogout"
+              class="block w-full text-left px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </nav>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/authStore'
-import axios from 'axios'
+import { useAttendanceStore } from '../stores/attendanceStore'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const attendanceStore = useAttendanceStore()
 const isUserMenuOpen = ref(false)
-const attendanceStatus = ref('unknown')
+const mobileMenuOpen = ref(false)
 
 const navigationItems = [
   { 
@@ -136,41 +211,28 @@ const userInitials = computed(() => {
 })
 
 const attendanceStatusClass = computed(() => {
-  switch (attendanceStatus.value) {
-    case 'checked-in':
-      return 'bg-green-500'
-    case 'checked-out':
-      return 'bg-gray-500'
-    default:
-      return 'bg-red-500'
+  if (attendanceStore.isCheckedIn && attendanceStore.isCheckedOut) {
+    return 'bg-gray-500'
+  } else if (attendanceStore.onBreak) {
+    return 'bg-yellow-500'
+  } else if (attendanceStore.isCheckedIn) {
+    return 'bg-green-500'
+  } else {
+    return 'bg-red-500'
   }
 })
 
 const attendanceStatusText = computed(() => {
-  switch (attendanceStatus.value) {
-    case 'checked-in':
-      return 'Checked In'
-    case 'checked-out':
-      return 'Checked Out'
-    default:
-      return 'Not Checked In'
+  if (attendanceStore.isCheckedIn && attendanceStore.isCheckedOut) {
+    return 'Checked Out'
+  } else if (attendanceStore.onBreak) {
+    return 'On Break'
+  } else if (attendanceStore.isCheckedIn) {
+    return 'Checked In'
+  } else {
+    return 'Not Checked In'
   }
 })
-
-const fetchAttendanceStatus = async () => {
-  try {
-    const response = await axios.get('/api/employee/attendance/status')
-    if (response.data.checkedIn && response.data.checkedOut) {
-      attendanceStatus.value = 'checked-out'
-    } else if (response.data.checkedIn) {
-      attendanceStatus.value = 'checked-in'
-    } else {
-      attendanceStatus.value = 'not-checked-in'
-    }
-  } catch (error) {
-    console.error('Error fetching attendance status:', error)
-  }
-}
 
 const handleLogout = async () => {
   isUserMenuOpen.value = false
@@ -178,7 +240,17 @@ const handleLogout = async () => {
   router.push('/login')
 }
 
-onMounted(() => {
-  fetchAttendanceStatus()
+onMounted(async () => {
+  // Fetch initial attendance status
+  try {
+    await attendanceStore.fetchCurrentStatus()
+  } catch (error) {
+    console.error('Error fetching initial attendance status:', error)
+  }
 })
+
+// Watch for attendance status changes to ensure UI updates
+watch(() => attendanceStore.currentStatus, (newStatus) => {
+  console.log('🔍 Navigation - Attendance status updated:', newStatus)
+}, { deep: true })
 </script> 

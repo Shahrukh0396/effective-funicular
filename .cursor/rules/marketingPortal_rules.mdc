@@ -1,0 +1,375 @@
+# Linton Client Portal - Marketing Website Portal
+# .cursorrules file for Marketing Portal implementation
+
+## Project Overview
+You are building the Marketing Website Portal for the Linton Client Portal - a comprehensive multi-tenant SaaS platform. This portal serves as the public-facing marketing website that generates leads, showcases services, and onboards new vendors to the platform.
+
+## Technology Stack
+- Frontend: Vue.js 3 with Composition API, Pinia, Tailwind CSS
+- Backend: Node.js, Express.js, MongoDB with Mongoose
+- Real-time: Socket.io for live updates
+- Authentication: JWT with role-based access
+- File Storage: AWS S3 integration
+- Email: SendGrid/AWS SES
+- Payments: Stripe integration
+- SEO: Meta tags, structured data, sitemap generation
+
+## Core Features to Implement
+
+### 1. Landing Page & Hero Section
+```vue
+<!-- HomePage.vue -->
+- Dynamic hero section with compelling value proposition
+- Service showcase with interactive demos
+- Social proof with vendor testimonials
+- Call-to-action buttons for vendor signup and demo requests
+- Responsive design with mobile-first approach
+- SEO optimized with proper meta tags
+```
+
+### 2. Lead Generation System
+```javascript
+// Lead capture forms throughout the site
+- Contact forms with validation
+- Demo request forms
+- Newsletter signup
+- Free trial registration
+- Lead scoring and qualification
+- CRM integration capabilities
+- Automated email sequences
+```
+
+### 3. Vendor Onboarding Flow
+```vue
+<!-- VendorSignup.vue & OnboardingWizard.vue -->
+- Multi-step vendor registration process
+- Company information collection
+- Subscription plan selection
+- Payment processing integration
+- Account verification system
+- Welcome email automation
+- Onboarding progress tracking
+```
+
+### 4. Service Showcase
+```vue
+<!-- FeaturesPage.vue -->
+- Interactive feature demonstrations
+- Comparison tables with competitors
+- Use case scenarios by industry
+- Integration showcase
+- Pricing calculator
+- ROI calculator
+- Feature deep-dive pages
+```
+
+### 5. Content Management System
+```javascript
+// Blog and resource management
+- Blog post creation and management
+- SEO optimization tools
+- Content categorization and tagging
+- Related content suggestions
+- Social sharing integration
+- Comment system
+- Content analytics
+```
+
+### 6. Pricing & Plans
+```vue
+<!-- PricingPage.vue -->
+- Dynamic pricing tables
+- Plan comparison features
+- Usage calculators
+- Custom enterprise pricing
+- Discount and coupon system
+- Trial period management
+- Upgrade/downgrade flows
+```
+
+### 7. Lead Management Dashboard
+```vue
+<!-- LeadDashboard.vue - Admin only -->
+- Lead tracking and qualification
+- Lead source analytics
+- Conversion funnel visualization
+- Lead assignment to sales team
+- Follow-up task management
+- Lead nurturing campaigns
+- Performance metrics
+```
+
+## Database Schemas
+
+### MarketingLeads Collection
+```javascript
+{
+  _id: ObjectId,
+  email: String (unique, required),
+  firstName: String (required),
+  lastName: String (required),
+  company: String,
+  jobTitle: String,
+  phone: String,
+  website: String,
+  companySize: String, // '1-10', '11-50', '51-200', '201-1000', '1000+'
+  industry: String,
+  source: String, // 'website', 'referral', 'social', 'ads', 'webinar'
+  campaign: String, // UTM campaign tracking
+  status: String, // 'new', 'contacted', 'qualified', 'demo_scheduled', 'proposal_sent', 'converted', 'lost'
+  leadScore: Number, // 0-100 scoring system
+  interests: [String], // features/services they're interested in
+  budget: String, // 'under_1k', '1k-5k', '5k-25k', '25k-100k', '100k+'
+  timeline: String, // 'immediate', 'within_month', 'within_quarter', 'next_year'
+  notes: String,
+  assignedTo: ObjectId, // sales rep
+  lastContactDate: Date,
+  nextFollowUpDate: Date,
+  convertedToVendor: ObjectId,
+  touchPoints: [{
+    type: String, // 'email', 'call', 'demo', 'meeting'
+    date: Date,
+    notes: String,
+    outcome: String
+  }],
+  utmData: {
+    source: String,
+    medium: String,
+    campaign: String,
+    term: String,
+    content: String
+  },
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+### BlogPosts Collection
+```javascript
+{
+  _id: ObjectId,
+  title: String (required),
+  slug: String (unique, required),
+  content: String (required),
+  excerpt: String,
+  featuredImage: String,
+  author: ObjectId,
+  category: String,
+  tags: [String],
+  status: String, // 'draft', 'published', 'archived'
+  seoTitle: String,
+  seoDescription: String,
+  publishedAt: Date,
+  viewCount: Number,
+  readingTime: Number, // in minutes
+  relatedPosts: [ObjectId],
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+### PricingPlans Collection
+```javascript
+{
+  _id: ObjectId,
+  name: String (required), // 'Starter', 'Professional', 'Enterprise'
+  description: String,
+  price: Number, // monthly price
+  currency: String,
+  billingCycle: String, // 'monthly', 'yearly'
+  features: [String],
+  limits: {
+    users: Number,
+    projects: Number,
+    storage: Number, // in GB
+    apiCalls: Number
+  },
+  popular: Boolean,
+  customPricing: Boolean,
+  stripeProductId: String,
+  stripePriceId: String,
+  active: Boolean,
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+## API Endpoints
+
+### Lead Management
+```javascript
+// POST /api/marketing/leads - Create new lead
+// GET /api/marketing/leads - Get all leads (admin only)
+// GET /api/marketing/leads/:id - Get specific lead
+// PUT /api/marketing/leads/:id - Update lead
+// DELETE /api/marketing/leads/:id - Delete lead
+// POST /api/marketing/leads/:id/touch-point - Add contact record
+// GET /api/marketing/leads/analytics - Lead analytics
+```
+
+### Content Management
+```javascript
+// GET /api/marketing/blog - Get published blog posts
+// POST /api/marketing/blog - Create blog post (admin only)
+// GET /api/marketing/blog/:slug - Get specific blog post
+// PUT /api/marketing/blog/:id - Update blog post
+// DELETE /api/marketing/blog/:id - Delete blog post
+// POST /api/marketing/blog/:id/publish - Publish draft
+```
+
+### Vendor Onboarding
+```javascript
+// POST /api/marketing/vendor-signup - Initial vendor registration
+// POST /api/marketing/demo-request - Request demo
+// GET /api/marketing/pricing - Get pricing plans
+// POST /api/marketing/contact - Contact form submission
+// POST /api/marketing/newsletter - Newsletter signup
+// GET /api/marketing/features - Get feature list
+```
+
+## Frontend Components Structure
+
+```
+src/
+├── pages/
+│   ├── HomePage.vue
+│   ├── FeaturesPage.vue
+│   ├── PricingPage.vue
+│   ├── ContactPage.vue
+│   ├── AboutPage.vue
+│   ├── BlogList.vue
+│   ├── BlogPost.vue
+│   ├── DemoRequest.vue
+│   ├── VendorSignup.vue
+│   ├── OnboardingWizard.vue
+│   └── admin/
+│       ├── LeadDashboard.vue
+│       ├── BlogManagement.vue
+│       └── AnalyticsDashboard.vue
+├── components/
+│   ├── layout/
+│   │   ├── Header.vue
+│   │   ├── Footer.vue
+│   │   └── Navigation.vue
+│   ├── hero/
+│   │   ├── HeroSection.vue
+│   │   ├── ValueProposition.vue
+│   │   └── CallToAction.vue
+│   ├── features/
+│   │   ├── FeatureGrid.vue
+│   │   ├── FeatureCard.vue
+│   │   ├── InteractiveDemo.vue
+│   │   └── ComparisonTable.vue
+│   ├── testimonials/
+│   │   ├── TestimonialCarousel.vue
+│   │   ├── TestimonialCard.vue
+│   │   └── CaseStudyPreview.vue
+│   ├── pricing/
+│   │   ├── PricingTable.vue
+│   │   ├── PlanCard.vue
+│   │   ├── Calculator.vue
+│   │   └── ROICalculator.vue
+│   ├── forms/
+│   │   ├── ContactForm.vue
+│   │   ├── DemoRequestForm.vue
+│   │   ├── NewsletterSignup.vue
+│   │   └── VendorRegistrationForm.vue
+│   ├── blog/
+│   │   ├── BlogCard.vue
+│   │   ├── BlogContent.vue
+│   │   ├── AuthorBio.vue
+│   │   └── RelatedPosts.vue
+│   └── admin/
+│       ├── LeadTable.vue
+│       ├── LeadDetails.vue
+│       ├── BlogEditor.vue
+│       └── AnalyticsCharts.vue
+```
+
+## Key Implementation Guidelines
+
+### 1. SEO Optimization
+```javascript
+// Every page should have proper SEO
+- Dynamic meta titles and descriptions
+- Open Graph tags for social sharing
+- JSON-LD structured data
+- XML sitemap generation
+- Robots.txt configuration
+- Page speed optimization
+- Mobile-first responsive design
+```
+
+### 2. Lead Scoring Algorithm
+```javascript
+// Implement lead scoring based on:
+- Company size (higher score for larger companies)
+- Industry relevance
+- Budget indication
+- Timeline urgency
+- Engagement level (page views, time on site)
+- Form completions
+- Email interactions
+```
+
+### 3. A/B Testing Framework
+```javascript
+// Implement A/B testing for:
+- Hero section messaging
+- Call-to-action buttons
+- Pricing page layouts
+- Form designs
+- Email templates
+- Landing page variations
+```
+
+### 4. Analytics Integration
+```javascript
+// Track important metrics:
+- Page views and user sessions
+- Conversion rates by source
+- Lead generation performance
+- Email campaign effectiveness
+- Blog post engagement
+- Pricing page interactions
+```
+
+### 5. Email Marketing Integration
+```javascript
+// Automated email sequences:
+- Welcome series for new leads
+- Product education emails
+- Demo follow-up sequences
+- Trial expiration reminders
+- Re-engagement campaigns
+- Newsletter broadcasts
+```
+
+## Security Considerations
+- Rate limiting on form submissions
+- CAPTCHA integration for spam prevention
+- Input validation and sanitization
+- GDPR compliance for data collection
+- Cookie consent management
+- Secure data transmission (HTTPS)
+- Protection against XSS and CSRF attacks
+
+## Performance Optimization
+- Image optimization and lazy loading
+- CDN implementation for static assets
+- Caching strategies for dynamic content
+- Database query optimization
+- Minification of CSS and JavaScript
+- Progressive Web App (PWA) features
+- Core Web Vitals optimization
+
+## Deployment Requirements
+- Environment-specific configurations
+- SSL certificate setup
+- Domain and subdomain management
+- Content Delivery Network (CDN) setup
+- Database backup procedures
+- Monitoring and logging setup
+- Error tracking implementation
+
+Remember: This portal is the first impression for potential vendors. Focus on compelling copy, smooth user experience, and seamless conversion flows. Every element should guide visitors toward becoming platform vendors.
